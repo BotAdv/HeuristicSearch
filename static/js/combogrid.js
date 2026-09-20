@@ -114,7 +114,7 @@ function renderComboMatrix(host, opts) {
   const onPick = opts.onPick;
 
   const table = document.createElement('table');
-  table.className = 'cg-table';
+  table.className = 'cg-table' + (opts.compact ? ' cg-compact' : '');
 
   const thead = document.createElement('thead');
   const headRow = document.createElement('tr');

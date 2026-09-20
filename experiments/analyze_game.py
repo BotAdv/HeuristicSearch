@@ -169,6 +169,22 @@ def _support_line(snap: Dict) -> str:
     )
 
 
+def _extra_line(d: Dict) -> str:
+    """非 A/B 阶段策略的横截面统计（准则名、批次、粒子数、探索位…）。"""
+    parts: List[str] = []
+    for key, value in d.items():
+        if key in ("round", "strategy", "strategyName", "phase", "support", "candidates"):
+            continue
+        if isinstance(value, dict):
+            inner = "、".join(f"{k}={v}" for k, v in list(value.items())[:6])
+            parts.append(f"{key}：{inner}")
+        else:
+            parts.append(f"{key}={value}")
+    if not parts:
+        return "* 本策略没有额外的横截面统计（看下面的逐位理由）。"
+    return "* 本轮统计：" + "；".join(parts) + "。"
+
+
 def _diff_line(before: Dict, after: Dict) -> str:
     pairs = []
     for i in range(len(before["sizes"])):
@@ -235,38 +251,42 @@ def render_report(record: Dict, rounds: List[Dict], seed_check: List[Tuple[str, 
             break
 
         d = r["decision"]
-        add(f"## 第 {r['index']} 轮 · 阶段 {d['phase']}")
+        phase = d.get("phase")
+        add(f"## 第 {r['index']} 轮{' · 阶段 ' + phase if phase else ''}")
         add("")
         add(f"* {_support_line(r['before'])}")
-        if d["phase"] == "A":
-            batch = d.get("batch") or {}
-            add(
-                f"* 阶段 A 已进行 {d['phaseARounds']} 轮；本轮从 **{batch.get('unknownTotal', 0)} 个未判定组合**中"
-                f"挑出 **{len(batch.get('chosen') or [])} 个**做支持集分类：{_combo_list(batch.get('chosen') or [], 10)}"
-            )
-            top = batch.get("rankedTop") or []
-            if top:
+        if phase in ("A", "B"):
+            if phase == "A":
+                batch = d.get("batch") or {}
                 add(
-                    "* 挑选依据（未判定集合按“仍可能出现的位置数”降序、再按用过次数升序）："
-                    + "，".join(f"{combo_str(t['combo'])}（{t['coverage']} 个位置可能 / 用过 {t['used']} 次）" for t in top[:5])
-                    + " …"
+                    f"* 阶段 A 已进行 {d.get('phaseARounds', 0)} 轮；本轮从 **{batch.get('unknownTotal', 0)} 个未判定组合**中"
+                    f"挑出 **{len(batch.get('chosen') or [])} 个**做支持集分类：{_combo_list(batch.get('chosen') or [], 10)}"
                 )
-        else:
-            add("* 阶段 B（置换求解）：支持集已确定，只需把 10 个成员安置到 10 个位置。")
-            budget = d.get("budget") or {}
-            before_rem = budget.get("remainingBefore") or {}
-            after_rem = budget.get("remainingOfSupport") or {}
-            if before_rem:
-                add(
-                    "* 各支持集成员尚未安置的副本数（本轮开始 → 本轮结束）："
-                    + "，".join(
-                        f"{k}：{before_rem.get(k, 0)}→{after_rem.get(k, 0)}" for k in list(before_rem)[:10]
+                top = batch.get("rankedTop") or []
+                if top:
+                    add(
+                        "* 挑选依据（未判定集合按“仍可能出现的位置数”降序、再按用过次数升序）："
+                        + "，".join(f"{combo_str(t['combo'])}（{t['coverage']} 个位置可能 / 用过 {t['used']} 次）" for t in top[:5])
+                        + " …"
                     )
-                )
-                add(
-                    "* 副本数 0 表示该组合已被 CORRECT 确认落位、没有余量；"
-                    "仍为 1 表示还没收到过 CORRECT 确认（可能已经由消去法锁定在某个位置）。"
-                )
+            else:
+                add("* 阶段 B（置换求解）：支持集已确定，只需把 10 个成员安置到 10 个位置。")
+                budget = d.get("budget") or {}
+                before_rem = budget.get("remainingBefore") or {}
+                after_rem = budget.get("remainingOfSupport") or {}
+                if before_rem:
+                    add(
+                        "* 各支持集成员尚未安置的副本数（本轮开始 → 本轮结束）："
+                        + "，".join(
+                            f"{k}：{before_rem.get(k, 0)}→{after_rem.get(k, 0)}" for k in list(before_rem)[:10]
+                        )
+                    )
+                    add(
+                        "* 副本数 0 表示该组合已被 CORRECT 确认落位、没有余量；"
+                        "仍为 1 表示还没收到过 CORRECT 确认（可能已经由消去法锁定在某个位置）。"
+                    )
+        else:
+            add(_extra_line(d))
         add("")
         add("**本轮猜测与每一位的依据**")
         add("")
@@ -356,6 +376,21 @@ def render_report(record: Dict, rounds: List[Dict], seed_check: List[Tuple[str, 
             add(f"| {k} | {v} | {v / total * 100:.1f}% |")
     add(f"| **合计** | {total} | 100% |")
     add("")
+    counts = {}
+    for r in rounds:
+        if r["decision"] is None:
+            continue
+        for cell in r["decision"]["candidates"]:
+            kind = (cell.get("reason") or "（无）").split("：")[0]
+            counts[kind] = counts.get(kind, 0) + 1
+    if counts:
+        add("按“理由开头”归类（自动适配任意策略）：")
+        add("")
+        add("| 理由类型 | 位置次数 | 占比 |")
+        add("| --- | --- | --- |")
+        for k, v in sorted(counts.items(), key=lambda kv: -kv[1]):
+            add(f"| {k} | {v} | {v / total * 100:.1f}% |")
+        add("")
     return "\n".join(lines) + "\n"
 
 

@@ -15,9 +15,10 @@ from __future__ import annotations
 from typing import Dict, List, Optional, Sequence, Tuple
 
 from core.game import CANDIDATES, SECRET_DISTINCT, SEQ_LEN, Combo
+from strategies import explain
 from strategies.base import History, ParamSpec, Strategy
 from strategies.belief import PositionBelief
-from strategies.position_entropy import pick_value
+from strategies.position_entropy import criterion_note, pick_value
 
 
 class AdaptiveHybridStrategy(Strategy):
@@ -53,8 +54,7 @@ class AdaptiveHybridStrategy(Strategy):
     def observe(self, guess: Sequence[Combo], feedback: Sequence[str]) -> None:
         self.belief.observe(guess, feedback)
 
-    def next_guess(self, history: History) -> List[Combo]:
-        self._sync(history)
+    def compute_guess(self, history: History) -> List[Combo]:
         guess: List[Optional[Combo]] = [None] * SEQ_LEN
         used = dict(self.used)
         picked: List[Combo] = []
@@ -65,6 +65,7 @@ class AdaptiveHybridStrategy(Strategy):
                 guess[i] = c
                 picked.append(c)
                 used[c] = used.get(c, 0) + 1
+                self.note(i, explain.locked_reason(self.belief, i, c))
 
         threshold = int(self.params["explore_threshold"])
         budget = int(self.params["max_explore"])
@@ -83,19 +84,37 @@ class AdaptiveHybridStrategy(Strategy):
                     guess[slot] = combo
                     picked.append(combo)
                     used[combo] = used.get(combo, 0) + 1
+                    cover = sum(1 for k in range(SEQ_LEN) if combo in self.belief.sets[k])
+                    self.note(
+                        slot,
+                        f"探测位：本位置候选 {len(self.belief.sets[slot])} 个 > 阈值 {threshold}，"
+                        f"改填尚未分类的 {explain.combo_label(combo)} 去换一次支持集判定"
+                        f"（它仍可能出现在 {cover} 个位置）",
+                    )
+            self.note_extra("exploreSlots", len(explore_slots))
+            self.note_extra("exploreThreshold", threshold)
 
         mode = self.params["pick_mode"]
         for i in sorted(undecided, key=lambda k: (len(self.belief.sets[k]), k)):
             if guess[i] is None:
-                c = pick_value(self.belief, i, used, self.rng, mode, avoid=picked)
+                trace: Dict = {}
+                c = pick_value(self.belief, i, used, self.rng, mode, avoid=picked, trace=trace)
                 guess[i] = c
                 picked.append(c)
                 used[c] = used.get(c, 0) + 1
+                self.note(
+                    i,
+                    f"定位位：本位置候选 {len(self.belief.sets[i])} 个 ≤ 阈值 {threshold}，"
+                    + criterion_note(self.belief, i, c, mode, trace),
+                )
 
         for c in guess:
             assert c is not None
             self.used[c] = self.used.get(c, 0) + 1
         return [c for c in guess if c is not None]
+
+    def explain_criterion(self) -> str:
+        return "探测位/定位位混合"
 
     # ------------------------------------------------------------------ 内部
     def _rank_unknown(self) -> List[Combo]:

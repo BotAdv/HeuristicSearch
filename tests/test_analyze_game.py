@@ -89,7 +89,8 @@ class TestExplainHook(unittest.TestCase):
                     cell["reason"],
                     f"第 {cell['position']} 位的理由与本轮猜测不一致：{cell['reason']}",
                 )
-                self.assertEqual(cell["chosen"], combo)
+                # last_decision 要能直接 JSON 化（前端/存档都用它）
+                self.assertEqual(cell["chosen"], list(combo))
             feedback = list(evaluate(guess, secret))
             history.append((tuple(guess), tuple(feedback)))
             if all(f == CORRECT for f in feedback):

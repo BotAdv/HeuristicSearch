@@ -20,6 +20,7 @@ from dataclasses import asdict, dataclass
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from core.game import CANDIDATES, SEQ_LEN, Combo, random_sequence
+from strategies.explain import build_decision, fill_missing_reasons
 
 History = List[Tuple[Tuple[Combo, ...], Tuple[str, ...]]]
 
@@ -103,12 +104,80 @@ class Strategy:
         """重置内部信念状态。子类覆盖时必须先调用 ``super().reset()``。"""
         self._absorbed = 0
         self._history: History = []
+        # ------- 决策解释（默认关闭；打开后只在 last_decision 里留下结构化理由，
+        #         不调用随机数、不改任何信念，因此不影响策略行为）
+        self.explain: bool = False
+        self.last_decision: Optional[Dict[str, Any]] = None
+        self._explain_reasons: List[Optional[str]] = []
+        self._explain_extra: Dict[str, Any] = {}
+        self._explain_round: int = 0
 
     def observe(self, guess: Sequence[Combo], feedback: Sequence[str]) -> None:
         """吸收一轮新反馈。子类按需覆盖。"""
 
+    # ------------------------------------------------------------- 主循环
     def next_guess(self, history: History) -> List[Combo]:
+        """模板方法：同步历史 → 收集解释 → 交给子类的 :meth:`compute_guess`。
+
+        子类不要再覆盖本方法，而是实现 :meth:`compute_guess`；
+        这样解释钩子对**所有**策略一律生效，不会出现"某个策略忘了写解释"的情况。
+        """
+        self._sync(history)
+        self.explain_begin(history)
+        guess = self.compute_guess(history)
+        self.explain_end(guess, history)
+        return guess
+
+    def compute_guess(self, history: History) -> List[Combo]:
+        """子类实现：基于当前信念给出下一轮猜测。"""
         raise NotImplementedError
+
+    # ------------------------------------------------------------- 决策解释
+    def explain_begin(self, history: History) -> None:
+        """开始记录本轮解释（关闭解释时直接返回）。"""
+        if not self.explain:
+            return
+        self._explain_round = len(history) + 1
+        self._explain_reasons = [None] * SEQ_LEN
+        self._explain_extra = {}
+
+    def note(self, i: int, text: str) -> None:
+        """给第 ``i`` 个位置（0-based）记一条中文理由。"""
+        if self.explain and 0 <= i < len(self._explain_reasons):
+            self._explain_reasons[i] = text
+
+    def note_extra(self, key: str, value: Any) -> None:
+        """记一条与位置无关的额外统计（批次、预算、准则分数…）。"""
+        if self.explain:
+            self._explain_extra[key] = value
+
+    def explain_phase(self) -> Optional[str]:
+        """阶段性策略可返回当前阶段名（用于前端分组展示）。"""
+        return None
+
+    def explain_criterion(self) -> str:
+        """通用兜底理由里使用的准则名（子类可覆盖成更具体的说法）。"""
+        return "按本策略的取值准则"
+
+    def explain_extra_fields(self) -> Dict[str, Any]:
+        """子类可补充与位置无关的额外字段（合并进 last_decision 顶层）。"""
+        return {}
+
+    def explain_end(self, guess: List[Combo], history: History) -> None:
+        """结束记录：把空缺理由补上，并组装 ``last_decision``。"""
+        if not self.explain:
+            return
+        fill_missing_reasons(self, guess, self._explain_reasons, self.explain_criterion())
+        extra = dict(self._explain_extra)
+        extra.update(self.explain_extra_fields())
+        self.last_decision = build_decision(
+            self,
+            guess,
+            self._explain_round,
+            self._explain_reasons,
+            extra,
+            phase=self.explain_phase(),
+        )
 
     # ------------------------------------------------------------- 工具
     def _sync(self, history: History) -> None:

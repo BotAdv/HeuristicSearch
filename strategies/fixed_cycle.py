@@ -27,10 +27,12 @@ class FixedCycleStrategy(Strategy):
     )
     max_rounds_hint = 60
 
-    def next_guess(self, history: History) -> List[Combo]:
-        self._sync(history)
+    def compute_guess(self, history: History) -> List[Combo]:
         round_index = len(history)
         step = int(self.params["step"])
         offset = int(self.params["offset0"])
         n = len(CANDIDATES)
         return [CANDIDATES[(offset + round_index * step + i) % n] for i in range(SEQ_LEN)]
+
+    def explain_criterion(self) -> str:
+        return "固定循环（本策略不使用反馈，按候选表下标整体平移）"

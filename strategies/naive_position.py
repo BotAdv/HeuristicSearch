@@ -10,6 +10,7 @@ from __future__ import annotations
 from typing import Dict, List, Optional, Sequence
 
 from core.game import CANDIDATES, SECRET_DISTINCT, SEQ_LEN, Combo
+from strategies import explain
 from strategies.base import History, ParamSpec, Strategy
 from strategies.belief import PositionBelief
 
@@ -59,24 +60,58 @@ class NaivePositionStrategy(Strategy):
     def observe(self, guess: Sequence[Combo], feedback: Sequence[str]) -> None:
         self.belief.observe(guess, feedback)
 
-    def _pick(self, i: int) -> Combo:
+    def _pick(self, i: int, trace: dict = None) -> Combo:
         cands = sorted(self.belief.sets[i])
         mode = self.params["pick_mode"]
         if len(cands) == 1:
+            if trace is not None:
+                trace["kind"] = "locked"
             return cands[0]
         if mode == "random":
-            return self.rng.choice(cands)
+            pick = self.rng.choice(cands)
+            if trace is not None:
+                trace.update({"kind": "random", "pool": len(cands)})
+            return pick
         if mode == "first":
+            if trace is not None:
+                trace.update({"kind": "first", "pool": len(cands)})
             return cands[0]
         best = min(self.used[c] for c in cands)
         tied = [c for c in cands if self.used[c] == best]
-        return self.rng.choice(tied)
+        pick = self.rng.choice(tied)
+        if trace is not None:
+            trace.update({"kind": "least_used", "pool": len(cands), "used": best, "tied": len(tied)})
+        return pick
 
-    def next_guess(self, history: History) -> List[Combo]:
-        self._sync(history)
+    def compute_guess(self, history: History) -> List[Combo]:
         guess: List[Combo] = []
         for i in range(SEQ_LEN):
-            c = self._pick(i)
+            trace: dict = {}
+            c = self._pick(i, trace)
             guess.append(c)
             self.used[c] = self.used.get(c, 0) + 1
+            self.note(i, self._reason(i, c, trace))
         return guess
+
+    def _reason(self, i: int, combo: Combo, trace: dict) -> str:
+        m = len(self.belief.sets[i])
+        kind = trace.get("kind")
+        if kind == "locked":
+            return explain.locked_reason(self.belief, i, combo)
+        if kind == "random":
+            return f"随机取值：本位置候选 {m} 个，等概率随机选一个（本策略不做信息最优性判断）"
+        if kind == "first":
+            return f"取候选集首项：本位置候选 {m} 个（按字典序），取 {explain.combo_label(combo)}"
+        detail = f"本位置候选 {m} 个里 {explain.combo_label(combo)} 全局只用过 {trace.get('used', 0)} 次（最少"
+        if trace.get("tied", 1) > 1:
+            detail += f"，并列 {trace['tied']} 个等概率取一个"
+        detail += "）"
+        note = explain.membership_note(self.belief, combo)
+        return "最少使用：" + detail + (f"；{note}" if note else "")
+
+    def explain_criterion(self) -> str:
+        return {
+            "least_used": "最少使用",
+            "random": "随机取值",
+            "first": "取候选集首项",
+        }.get(str(self.params["pick_mode"]), "位置独立贪心")

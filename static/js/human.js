@@ -75,6 +75,17 @@
     box.innerHTML = text;
   }
 
+  // 决策解释：默认看当前待反馈的猜测，点历史行可以回看该轮
+  function renderDecisionPanel(decision, source) {
+    const box = $('decisionBox');
+    if (!decision) {
+      box.innerHTML = '<div class="muted">当前没有可解释的猜测（先让策略出招，或点历史里某一轮的「理由」）。</div>';
+      return;
+    }
+    renderDecision(box, decision, { strategyName: state.game ? state.game.strategyName : '' });
+    if (source) $('decHint').textContent = source;
+  }
+
   function renderGrid() {
     const host = $('guessGrid');
     host.innerHTML = '';
@@ -179,13 +190,23 @@
       host.appendChild(back);
     }
     history.forEach((h, i) => {
-      renderRound(host, i + 1, h.guess, h.feedback);
+      const decisions = state.viewing ? (state.viewing.decisions || []) : (source.decisions || []);
+      renderRound(host, i + 1, h.guess, h.feedback, {
+        decision: decisions[i],
+        onReason: (decision, index) => {
+          renderDecisionPanel(decision, null);
+          $('decHint').textContent = `正在查看第 ${index} 轮的逐位理由（反馈 ` +
+            `${[...h.feedback].map(k => LETTER[k]).join('')}）`;
+          const box = $('decisionBox');
+          if (box.scrollIntoView) box.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+        },
+      });
       const warn = warnings[i];
       if (warn && warn.length) {
-        const line = document.createElement('div');
-        line.className = 'warnline';
-        line.textContent = '⚠️ ' + warn.join('；');
-        host.appendChild(line);
+        const wline = document.createElement('div');
+        wline.className = 'warnline';
+        wline.textContent = '⚠️ ' + warn.join('；');
+        host.appendChild(wline);
       }
     });
     $('histBadge').textContent = `${history.length} 轮`;
@@ -220,6 +241,14 @@
     renderHistory();
     renderMatrix();
     refreshStatus();
+    // 换了一轮猜测：解释面板回到“当前待反馈猜测”
+    if (!state.viewing) {
+      const g = next;
+      const decision = g ? (g.pendingDecision || null) : null;
+      renderDecisionPanel(decision, decision
+        ? `当前待反馈的猜测（第 ${decision.round} 轮）由 ${g.strategyName || g.strategy} 给出，逐位理由如下。`
+        : null);
+    }
     $('btnUndo').disabled = !next || (!(next.history || []).length && !next.pendingGuess);
     $('btnSave').disabled = !next || !(next.history || []).length;
   }

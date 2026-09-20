@@ -6,6 +6,7 @@
     <select id="mode">
       <option value="manual">手动试玩</option>
       <option value="strategy">策略自动</option>
+      <option value="multi">多策略对比</option>
     </select>
   </div>
   <div class="group" id="strategyGroup" hidden>
@@ -13,6 +14,14 @@
     <div class="row">
       <select id="strategy"></select>
       <span id="strategyParams" class="params-inline"></span>
+    </div>
+  </div>
+  <div class="group" id="adviseGroup" hidden>
+    <label for="adviseStrategy">把当前历史交给策略</label>
+    <div class="row">
+      <select id="adviseStrategy"></select>
+      <span id="adviseParams" class="params-inline"></span>
+      <button id="btnAdvise" disabled>让策略预测下一步</button>
     </div>
   </div>
   <div class="group">
@@ -34,7 +43,21 @@
 
 <div id="status" class="status">点击「开新局」开始。</div>
 
-<main class="sandbox">
+<!-- 多策略对比：参与策略清单 -->
+<section id="planPanel" class="panel" hidden style="margin:0 20px 14px">
+  <header>
+    <h2>参与对比的策略 <span class="badge" id="planCount">0</span></h2>
+    <p class="hint">所有策略面对<b>同一条秘密序列</b>（同一局），因此步数差异只来自策略本身；
+      每走一步会同时推进所有策略，也可以单独让某个策略走一步。</p>
+  </header>
+  <div id="planList" class="plan-list"></div>
+  <div class="row">
+    <select id="planAddKey"></select>
+    <button id="btnPlanAdd">+ 添加策略</button>
+  </div>
+</section>
+
+<main class="sandbox" id="sandboxMain">
   <section class="panel">
     <header>
       <h2>候选组合矩阵 <span class="badge" id="paletteCount">45</span></h2>
@@ -67,14 +90,26 @@
     <div id="secretBox" class="secret" hidden></div>
   </section>
 
-  <section class="panel wide">
+  <section class="panel">
     <header>
       <h2>对局历史 <span class="badge" id="roundBadge">0 轮</span></h2>
-      <p class="hint">每行展示一轮的猜测与逐位反馈。</p>
+      <p class="hint">每行展示一轮的猜测与逐位反馈。手动模式下把历史交给策略，
+        就能看到该策略基于同样的历史会怎么走。</p>
     </header>
     <div id="history" class="history"></div>
   </section>
+
+  <section class="panel" id="explainPanel" hidden>
+    <header>
+      <h2>决策解释：这一步为什么这么选</h2>
+      <p class="hint" id="explainSource">—</p>
+    </header>
+    <div id="explainBox" class="dec-box"></div>
+  </section>
 </main>
+
+<!-- 多策略对比：每个策略一块面板 -->
+<main class="multi-grid" id="multiGrid" hidden></main>
 {% endblock %}
 
 {% block scripts %}

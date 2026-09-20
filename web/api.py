@@ -88,6 +88,7 @@ class GameSession:
         strategy_seed: Optional[int] = None,
         max_rounds: int = config.MAX_ROUNDS_DEFAULT,
         tag: str = "sandbox",
+        explain: bool = True,
     ) -> None:
         self.game = game
         self.mode = mode
@@ -96,9 +97,15 @@ class GameSession:
         self.tag = tag
         self.max_rounds = max_rounds
         self.logged_rounds = 0
+        #: 是否逐轮记录“为什么这么选”（沙盒交互用；关闭则不产生额外开销）
+        self.explain = explain
+        #: 与 history 一一对应的决策解释（手动提交的那一轮为 None）
+        self.decisions: List[Optional[Dict[str, Any]]] = []
         self.strategy = (
             create(strategy_key, seed=strategy_seed, **self.params) if strategy_key else None
         )
+        if self.strategy is not None:
+            self.strategy.explain = self.explain
 
     # ------------------------------------------------------------------ 操作
     def step(self, guess=None) -> Dict[str, Any]:
@@ -106,10 +113,12 @@ class GameSession:
             raise RuntimeError("本局已经结束")
         if self.game.rounds >= self.max_rounds:
             raise RuntimeError(f"已达轮次上限 {self.max_rounds}")
+        decision = None
         if guess is None:
             if self.strategy is None:
                 raise ValueError("本局没有绑定策略，必须提供猜测序列")
             guess = self.strategy.next_guess(self.game.history)
+            decision = self.strategy.last_decision
         feedback = self.game.submit(guess)
         index = self.game.rounds
         journal.record_manual_round(
@@ -121,6 +130,7 @@ class GameSession:
             strategy_key=self.strategy_key or "human",
         )
         self.logged_rounds = index
+        self.decisions.append(decision)
         return {
             "index": index,
             "guess": serialize_sequence(self.game.history[-1][0]),
@@ -128,6 +138,7 @@ class GameSession:
             "letters": "".join(FEEDBACK_LETTER[f] for f in feedback),
             "solved": self.game.solved,
             "rounds": self.game.rounds,
+            "decision": decision,
         }
 
     def payload(self, reveal: bool = False, with_history: bool = True) -> Dict[str, Any]:
@@ -139,8 +150,13 @@ class GameSession:
                 "params": self.params,
                 "maxRounds": self.max_rounds,
                 "exhausted": self.game.rounds >= self.max_rounds and not self.game.solved,
+                "explain": self.explain,
             }
         )
+        # 把每轮的决策解释并进 history，前端就能逐轮看“为什么这么选”
+        history = data.get("history") or []
+        for i, round_info in enumerate(history):
+            round_info["decision"] = self.decisions[i] if i < len(self.decisions) else None
         if not with_history:
             data.pop("history", None)
         return data
@@ -153,6 +169,147 @@ def _gc_sessions() -> None:
     for key, _ in ordered[: len(_GAMES) - MAX_SESSIONS]:
         _GAMES.pop(key, None)
 
+class MultiGameSession:
+    """同一秘密、多个策略各自独立推进（并排对比）。
+
+    这是 ``engine.simulator.run_benchmark`` 的“手动/单局”版本：
+    所有策略面对**同一条秘密序列**，因此步数差异只来自策略本身，不来自题目难度。
+    """
+
+    def __init__(self, entries: List[GameSession], max_rounds: int, tag: str = "sandbox-multi") -> None:
+        self.entries = entries
+        self.max_rounds = max_rounds
+        self.tag = tag
+        self.game_id = "multi-" + entries[0].game.game_id
+        self.created = time.time()
+
+    # ------------------------------------------------------------------ 查询
+    @property
+    def game(self):
+        """兼容单会话接口：返回第一个子对局（仅用于取 game_id / rounds 等）。"""
+        return self.entries[0].game
+
+    @property
+    def mode(self) -> str:
+        return "multi"
+
+    def finished(self) -> bool:
+        return all(e.game.solved or e.game.rounds >= self.max_rounds for e in self.entries)
+
+    def round_labels(self) -> Dict[str, str]:
+        return {e.game.game_id: (e.strategy_key or "human") for e in self.entries}
+
+    # ------------------------------------------------------------------ 操作
+    def step(self, only: Optional[int] = None) -> List[Dict[str, Any]]:
+        out: List[Dict[str, Any]] = []
+        for idx, entry in enumerate(self.entries):
+            if only is not None and idx != only:
+                continue
+            if entry.game.solved or entry.game.rounds >= self.max_rounds:
+                out.append({"index": idx, "strategy": entry.strategy_key, "skipped": True,
+                            "solved": entry.game.solved, "rounds": entry.game.rounds})
+                continue
+            info = entry.step()
+            info["index"] = idx
+            info["strategy"] = entry.strategy_key
+            out.append(info)
+        return out
+
+    def play(self) -> List[Dict[str, Any]]:
+        """一直推进到全部解出或全部达到轮次上限。"""
+        guard = 0
+        while not self.finished() and guard <= self.max_rounds:
+            self.step()
+            guard += 1
+        trace: List[Dict[str, Any]] = []
+        for entry in self.entries:
+            journal.record_game(
+                {
+                    "gameId": entry.game.game_id,
+                    "solved": entry.game.solved,
+                    "rounds": entry.game.rounds,
+                    "trace": [],
+                    "secret": entry.game.secret,
+                },
+                strategy_key=entry.strategy_key or "human",
+                strategy_name=entry.strategy.name if entry.strategy else (entry.strategy_key or "human"),
+                params=entry.params,
+                tag=self.tag,
+                include_rounds=False,
+            )
+            trace.append({
+                "index": entry.strategy_key,
+                "gameId": entry.game.game_id,
+                "solved": entry.game.solved,
+                "rounds": entry.game.rounds,
+            })
+        return trace
+
+    def payload(self, reveal: bool = False, with_history: bool = True) -> Dict[str, Any]:
+        entries = []
+        for idx, entry in enumerate(self.entries):
+            data = entry.payload(reveal=reveal, with_history=with_history)
+            data["index"] = idx
+            data["strategyName"] = entry.strategy.name if entry.strategy else entry.strategy_key
+            entries.append(data)
+        return {
+            "gameId": self.game_id,
+            "mode": "multi",
+            "rounds": max(e.game.rounds for e in self.entries),
+            "maxRounds": self.max_rounds,
+            "solved": all(e.game.solved for e in self.entries),
+            "finished": self.finished(),
+            "entries": entries,
+        }
+
+
+def _make_sessions(
+    plan: List[Dict[str, Any]],
+    secret: Optional[List],
+    seed: Optional[int],
+    strategy_seed: Optional[int],
+    max_rounds: int,
+    mode: str,
+    tag: str,
+) -> List[GameSession]:
+    """按计划创建若干个共享同一秘密的策略对局。"""
+    if secret is None:
+        secret = simulator.make_secrets(1, seed)[0]
+    sessions: List[GameSession] = []
+    for item in plan:
+        sessions.append(
+            GameSession(
+                SequenceGame(secret=list(secret), seed=None),
+                mode=mode,
+                strategy_key=item["key"],
+                params=item.get("params") or {},
+                strategy_seed=strategy_seed,
+                max_rounds=max_rounds,
+                tag=tag,
+            )
+        )
+    return sessions
+
+
+def _parse_history(raw) -> List[Tuple[Tuple, Tuple[str, ...]]]:
+    """解析外部传入的对局历史：``[{guess, feedback}]`` 或 ``[[guess, feedback]]``。"""
+    if not raw:
+        return []
+    if not isinstance(raw, (list, tuple)):
+        raise ValueError("history 必须是列表")
+    history: List[Tuple[Tuple, Tuple[str, ...]]] = []
+    for item in raw:
+        if isinstance(item, dict):
+            guess_raw = item.get("guess")
+            fb_raw = item.get("feedback", item.get("letters"))
+        elif isinstance(item, (list, tuple)) and len(item) == 2:
+            guess_raw, fb_raw = item
+        else:
+            raise ValueError(f"无法解析历史条目：{item!r}")
+        guess = tuple(_parse_guess(guess_raw))
+        feedback = tuple(parse_feedback(fb_raw, SEQ_LEN))
+        history.append((guess, feedback))
+    return history
 
 def _get_session(gid: str) -> GameSession:
     session = _GAMES.get(gid)
@@ -342,23 +499,38 @@ def api_create_game():
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
     mode = payload.get("mode") or ("strategy" if payload.get("strategy") else "manual")
+    seed = payload.get("seed")
+    seed = int(seed) if seed not in (None, "") else None
+    strategy_seed = payload.get("strategySeed")
+    strategy_seed = int(strategy_seed) if strategy_seed not in (None, "") else seed
+    max_rounds = _int_field(payload, "maxRounds", config.MAX_ROUNDS_DEFAULT, 1, config.MAX_ROUNDS_LIMIT)
+
+    # ---------------- 多策略并排：同一秘密下各跑各的 ----------------
+    if mode == "multi":
+        try:
+            plan = _parse_plan(payload)
+        except (KeyError, ValueError) as exc:
+            return jsonify({"error": str(exc)}), 400
+        entries = _make_sessions(plan, secret, seed, strategy_seed, max_rounds, "strategy", "sandbox-multi")
+        session = MultiGameSession(entries, max_rounds)
+        with _GAME_LOCK:
+            _GAMES[session.game_id] = session
+            _gc_sessions()
+        return jsonify(session.payload(reveal=bool(payload.get("reveal"))))
+
     strategy_key = payload.get("strategy") if mode == "strategy" else None
     if strategy_key:
         try:
             get_strategy_class(strategy_key)
         except KeyError as exc:
             return jsonify({"error": str(exc)}), 400
-    seed = payload.get("seed")
-    seed = int(seed) if seed not in (None, "") else None
-    strategy_seed = payload.get("strategySeed")
-    strategy_seed = int(strategy_seed) if strategy_seed not in (None, "") else seed
     session = GameSession(
         SequenceGame(secret=secret, seed=seed if secret is None else None),
         mode=mode,
         strategy_key=strategy_key,
         params=payload.get("params") or {},
         strategy_seed=strategy_seed,
-        max_rounds=_int_field(payload, "maxRounds", config.MAX_ROUNDS_DEFAULT, 1, config.MAX_ROUNDS_LIMIT),
+        max_rounds=max_rounds,
         tag=payload.get("tag") or "sandbox",
     )
     with _GAME_LOCK:
@@ -366,6 +538,50 @@ def api_create_game():
         _gc_sessions()
     reveal = bool(payload.get("reveal"))
     return jsonify(session.payload(reveal=reveal))
+
+
+@api.post("/advise")
+def api_advise():
+    """把一段对局历史（含逐位反馈）交给某个策略，返回它下一步会怎么猜。
+
+    用于“手动试玩 → 交给策略预测下一步”：服务端不需要知道秘密，
+    只拿历史重放策略的信念，因此可以接受任何来源的历史（含人工逐步猜测的对局）。
+    """
+    payload = request.get_json(silent=True) or {}
+    key = payload.get("strategy")
+    try:
+        get_strategy_class(key)
+    except KeyError as exc:
+        return jsonify({"error": str(exc)}), 400
+    try:
+        history = _parse_history(payload.get("history"))
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    seed = payload.get("seed")
+    seed = int(seed) if seed not in (None, "") else None
+    params = dict(payload.get("params") or {})
+    strategy = create(key, seed=seed, **params)
+    strategy.explain = bool(payload.get("explain", True))
+    try:
+        # 先按历史逐步重放：策略内部的计数/随机数是**状态**，
+        # 只把历史一次性喂进去会得到与真实对局不同的平局选择。
+        # 重放后才能保证“它当初真会这么下”。
+        for step in range(len(history)):
+            strategy.next_guess(history[:step])
+        guess = strategy.next_guess(history)
+    except Exception as exc:  # noqa: BLE001 - 策略内部异常
+        return jsonify({"error": f"策略执行失败：{type(exc).__name__}: {exc}"}), 500
+    return jsonify(
+        {
+            "strategy": key,
+            "strategyName": get_strategy_class(key).name,
+            "params": params,
+            "rounds": len(history),
+            "guess": serialize_sequence(guess),
+            "letters": None,
+            "decision": strategy.last_decision,
+        }
+    )
 
 
 @api.get("/games/<gid>")
@@ -385,6 +601,17 @@ def api_step_game(gid: str):
     except KeyError as exc:
         return jsonify({"error": str(exc)}), 404
     payload = request.get_json(silent=True) or {}
+
+    # 多策略并排：默认所有策略各走一步；带 only 则只走第 only 个
+    if isinstance(session, MultiGameSession):
+        only = payload.get("only")
+        only = int(only) if only not in (None, "") else None
+        try:
+            rounds = session.step(only=only)
+        except Exception as exc:  # noqa: BLE001 - 策略内部异常
+            return jsonify({"error": f"策略执行失败：{type(exc).__name__}: {exc}"}), 500
+        return jsonify({"rounds": rounds, "state": session.payload()})
+
     guess = None
     if payload.get("guess"):
         try:
@@ -408,6 +635,14 @@ def api_play_game(gid: str):
         return jsonify({"error": str(exc)}), 404
     payload = request.get_json(silent=True) or {}
     reveal = bool(payload.get("reveal"))
+
+    if isinstance(session, MultiGameSession):
+        try:
+            trace = session.play()
+        except Exception as exc:  # noqa: BLE001
+            return jsonify({"error": f"策略执行失败：{type(exc).__name__}: {exc}"}), 500
+        return jsonify({"trace": trace, "state": session.payload(reveal=reveal)})
+
     trace: List[Dict[str, Any]] = []
     try:
         while not session.game.solved and session.game.rounds < session.max_rounds:
@@ -729,10 +964,16 @@ class HumanSession:
         self.record: Optional[Dict[str, Any]] = None
         self.strategy = create(strategy_key, seed=strategy_seed, **params)
         self.strategy_name = get_strategy_class(strategy_key).name
+        #: 每轮出招时的决策解释（与 history 一一对应）；逐步猜测页用它展示“为什么这么选”
+        self.decisions: List[Optional[Dict[str, Any]]] = []
+        self.pending_decision: Optional[Dict[str, Any]] = None
 
     # ------------------------------------------------------------------ 操作
     def issue_guess(self) -> List[List[int]]:
+        # 出招时打开解释钩子：逐步猜测模式的重点之一就是“说清每一步为什么这么选”
+        self.strategy.explain = True
         guess = self.strategy.next_guess(self.game.history)
+        self.pending_decision = self.strategy.last_decision
         return serialize_sequence(self.game.set_pending(guess))
 
     def submit(self, feedback: List[str]) -> List[str]:
@@ -741,12 +982,27 @@ class HumanSession:
             # 严格模式：退回这一轮，并保留同一个猜测继续等待反馈（不污染历史）
             self.game.reject_last_round()
             raise ValueError("反馈与已有记录矛盾（严格模式已拒绝）：" + "；".join(warnings))
+        self.decisions.append(self.pending_decision)
+        self.pending_decision = None
         if self.game.solved and self.auto_save:
             self.save()
         return warnings
 
+    def after_undo(self, undone: bool) -> None:
+        """撤销后让 decisions 与 history 保持对齐。
+
+        ``HumanFeedbackGame.undo()`` 会把被撤销的那一轮猜测重新变成“待反馈”，
+        所以对应的解释也要跟着回到 pending，否则那一步会显示成“没有解释”。
+        """
+        if undone and self.decisions:
+            self.pending_decision = self.decisions.pop()
+        elif not undone:
+            self.pending_decision = None
+
     def save(self) -> Dict[str, Any]:
         self.record = self.game.record(strategy_key=self.strategy_key, params=self.params)
+        # 把每轮的“为什么这么选”一并归档（复盘/回看用；缺失不影响其它读取方）
+        self.record["decisions"] = self.decisions
         path = journal.archive_game(self.record)
         self.record["savedPath"] = path
         self.game.saved_path = path
@@ -769,6 +1025,9 @@ class HumanSession:
                 "autoSave": self.auto_save,
                 "saved": self.saved,
                 "canUndo": bool(self.game.history) or self.game.pending_guess is not None,
+                "decisions": self.decisions,
+                "pendingDecision": self.pending_decision,
+                "explainAvailable": True,
             }
         )
         return data
@@ -889,6 +1148,7 @@ def api_human_undo(gid: str):
     except KeyError as exc:
         return jsonify({"error": str(exc)}), 404
     undone = session.game.undo()
+    session.after_undo(bool(undone))
     session.rollback_save()
     return jsonify({"undone": undone, "state": session.payload()})
 

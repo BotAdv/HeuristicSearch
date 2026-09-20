@@ -23,6 +23,8 @@ class RandomStrategy(Strategy):
     params_spec = ()
     max_rounds_hint = 30
 
-    def next_guess(self, history: History) -> List[Combo]:
-        self._sync(history)
+    def compute_guess(self, history: History) -> List[Combo]:
         return self._random_guess()
+
+    def explain_criterion(self) -> str:
+        return "随机基线（本策略完全不看反馈，每个位置独立均匀随机）"

@@ -22,8 +22,37 @@ import math
 from typing import Dict, List, Sequence, Tuple
 
 from core.game import CANDIDATES, SECRET_DISTINCT, SEQ_LEN, Combo
+from strategies import explain
 from strategies.base import History, ParamSpec, Strategy
 from strategies.belief import NEIGHBOR_MASK, PositionBelief, shannon
+
+
+def criterion_note(belief: PositionBelief, i: int, combo: Combo, mode: str, trace: Dict) -> str:
+    """把「准则 + 已算好的分数」拼成一句可展示的理由。"""
+    kind = trace.get("kind", mode)
+    m = trace.get("pool", len(belief.sets[i]))
+    if kind == "split":
+        detail = f"{explain.combo_label(combo)} 能把本位置 {m} 个候选按“与它共享对象/不共享”切成 "
+        detail += f"{trace.get('shared', 0)}/{trace.get('other', 0)}，二等分收益 {trace.get('gain', 0)} bit（最高"
+        if trace.get("tied", 1) > 1:
+            detail += f"，并列 {trace['tied']} 个取用过更少的"
+        detail += "）"
+        if trace.get("usedAvoid"):
+            detail += "；轮内互异：已避开本轮用过的组合"
+        return f"split 二等分：{detail}"
+    if kind == "entropy":
+        detail = (
+            f"取 {explain.combo_label(combo)} 时本位置四种反馈的分布熵 {trace.get('entropy', 0)} bit（"
+            f"候选 {m} 个里最高"
+        )
+        if trace.get("tied", 1) > 1:
+            detail += f"，并列 {trace['tied']} 个取用过更少的"
+        detail += "）"
+        if trace.get("usedAvoid"):
+            detail += "；轮内互异：已避开本轮用过的组合"
+        return f"最大熵：{detail}"
+    detail = f"本位置候选 {m} 个里 {explain.combo_label(combo)} 全局只用过 {trace.get('used', 0)} 次（最少）"
+    return f"最少使用：{detail}"
 
 
 def outcome_distribution(belief: PositionBelief, i: int, c: Combo) -> Tuple[float, float, float, float]:
@@ -88,10 +117,15 @@ def best_split_value(
     rng,
     untested_only: bool = False,
     avoid: Sequence[Combo] = (),
+    trace: Dict = None,
 ) -> Combo:
-    """选择“切割候选集合最均匀”的组合。"""
+    """选择“切割候选集合最均匀”的组合。
+
+    ``trace`` 仅用于**只读**记录选择依据（已算好的量，不额外调用随机数）。
+    """
     pool = sorted(belief.sets[i]) or list(CANDIDATES)
     fresh = [c for c in pool if belief.status.get(c) == "U"]
+    untested = list(fresh)
     if untested_only and fresh:
         pool = fresh
     if avoid:
@@ -102,7 +136,26 @@ def best_split_value(
     gains = {c: split_gain(belief, i, c) for c in pool}
     best = max(gains.values())
     tied = [c for c in pool if gains[c] >= best - 1e-12]
-    return min(tied, key=lambda c: (used.get(c, 0), rng.random()))
+    winner = min(tied, key=lambda c: (used.get(c, 0), rng.random()))
+    if trace is not None:
+        m = len(belief.sets[i])
+        shared = (NEIGHBOR_MASK[winner] & belief.mask(i)).bit_count() - 1 if m > 1 else 0
+        trace.update(
+            {
+                "kind": "split",
+                "pool": len(belief.sets[i]),
+                "considered": len(pool),
+                "untestedOnly": bool(untested_only),
+                "untestedCount": len(untested),
+                "usedAvoid": bool(avoid),
+                "gain": round(best, 3),
+                "tied": len(tied),
+                "shared": max(0, shared),
+                "other": max(0, m - 1 - shared),
+                "used": used.get(winner, 0),
+            }
+        )
+    return winner
 
 
 def pick_value(
@@ -112,25 +165,41 @@ def pick_value(
     rng,
     mode: str,
     avoid: Sequence[Combo] = (),
+    trace: Dict = None,
 ) -> Combo:
     """统一入口：``entropy`` / ``split`` / ``least_used``。
 
     ``avoid`` 用于“同一轮内尽量使用互异组合”：一轮里把 10 个位置分给 10 个**不同**的
     未测试组合，能在一轮内完成最多 10 次支持集分类，这在本游戏中非常关键。
+    ``trace`` 只用于只读记录选择依据（不改变任何决策）。
     """
     if mode == "split":
-        return best_split_value(belief, i, used, rng, untested_only=True, avoid=avoid)
+        return best_split_value(belief, i, used, rng, untested_only=True, avoid=avoid, trace=trace)
     if mode == "least_used":
         pool = sorted(belief.sets[i]) or list(CANDIDATES)
         if len(pool) == 1:
+            if trace is not None:
+                trace.update({"kind": "least_used", "pool": 1, "used": used.get(pool[0], 0)})
             return pool[0]
+        full = list(pool)
         if avoid:
             avoid_set = set(avoid)
             trimmed = [c for c in pool if c not in avoid_set]
             if trimmed:
                 pool = trimmed
-        return min(pool, key=lambda c: (used.get(c, 0), rng.random()))
-    return best_entropy_value(belief, i, used, rng, avoid=avoid)
+        winner = min(pool, key=lambda c: (used.get(c, 0), rng.random()))
+        if trace is not None:
+            trace.update(
+                {
+                    "kind": "least_used",
+                    "pool": len(full),
+                    "considered": len(pool),
+                    "usedAvoid": bool(avoid),
+                    "used": used.get(winner, 0),
+                }
+            )
+        return winner
+    return best_entropy_value(belief, i, used, rng, avoid=avoid, trace=trace)
 
 
 def best_entropy_value(
@@ -140,11 +209,13 @@ def best_entropy_value(
     rng,
     candidates: Sequence[Combo] = None,
     avoid: Sequence[Combo] = (),
+    trace: Dict = None,
 ) -> Combo:
     """在位置 ``i`` 的候选集合中选熵最大的组合；同分时偏向“更少用过”的组合。"""
-    pool = list(candidates) if candidates is not None else sorted(belief.sets[i])
+    full = sorted(belief.sets[i])
+    pool = list(candidates) if candidates is not None else list(full)
     if not pool:
-        pool = sorted(belief.sets[i]) or list(CANDIDATES)
+        pool = full or list(CANDIDATES)
     if avoid:
         avoid_set = set(avoid)
         trimmed = [c for c in pool if c not in avoid_set]
@@ -153,7 +224,20 @@ def best_entropy_value(
     scores = {c: entropy_score(belief, i, c) for c in pool}
     best = max(scores.values())
     tied = [c for c in pool if scores[c] >= best - 1e-12]
-    return min(tied, key=lambda c: (used.get(c, 0), rng.random()))
+    winner = min(tied, key=lambda c: (used.get(c, 0), rng.random()))
+    if trace is not None:
+        trace.update(
+            {
+                "kind": "entropy",
+                "pool": len(full),
+                "considered": len(pool),
+                "usedAvoid": bool(avoid),
+                "entropy": round(best, 3),
+                "tied": len(tied),
+                "used": used.get(winner, 0),
+            }
+        )
+    return winner
 
 
 class PositionEntropyStrategy(Strategy):
@@ -192,8 +276,7 @@ class PositionEntropyStrategy(Strategy):
     def observe(self, guess: Sequence[Combo], feedback: Sequence[str]) -> None:
         self.belief.observe(guess, feedback)
 
-    def next_guess(self, history: History) -> List[Combo]:
-        self._sync(history)
+    def compute_guess(self, history: History) -> List[Combo]:
         guess: List[Combo] = [None] * SEQ_LEN  # type: ignore[list-item]
         floor = int(self.params["explore_floor"])
         mode = self.params["pick_mode"]
@@ -208,6 +291,7 @@ class PositionEntropyStrategy(Strategy):
                 guess[i] = solved
                 picked.append(solved)
                 used[solved] = used.get(solved, 0) + 1
+                self.note(i, explain.locked_reason(self.belief, i, solved))
             else:
                 free.append(i)
 
@@ -223,16 +307,32 @@ class PositionEntropyStrategy(Strategy):
                 guess[slot] = combo
                 picked.append(combo)
                 used[combo] = used.get(combo, 0) + 1
+                cover = sum(1 for k in range(SEQ_LEN) if combo in self.belief.sets[k])
+                self.note(
+                    slot,
+                    f"强制探索（explore_floor={floor}）：本位置候选 {len(self.belief.sets[slot])} 个，"
+                    f"改用尚未分类的 {explain.combo_label(combo)} 去换一次支持集判定"
+                    f"（它仍可能出现在 {cover} 个位置）",
+                )
+            self.note_extra("exploreFloor", floor)
+            self.note_extra("probeCount", min(floor, len(ranked)))
 
         # 3) 其余位置走所选准则（按候选数从少到多处理，并尽量使用互异组合）
         for i in sorted(free, key=lambda k: (len(self.belief.sets[k]), k)):
             if guess[i] is None:
-                c = pick_value(self.belief, i, used, self.rng, mode, avoid=picked)
+                trace: Dict = {}
+                c = pick_value(self.belief, i, used, self.rng, mode, avoid=picked, trace=trace)
                 guess[i] = c
                 picked.append(c)
                 used[c] = used.get(c, 0) + 1
+                self.note(i, criterion_note(self.belief, i, c, mode, trace))
 
         for c in guess:
             assert c is not None
             self.used[c] = self.used.get(c, 0) + 1
         return [c for c in guess if c is not None]
+
+    def explain_criterion(self) -> str:
+        return {"split": "split 二等分", "entropy": "最大熵", "least_used": "最少使用"}.get(
+            str(self.params["pick_mode"]), "取值准则"
+        )

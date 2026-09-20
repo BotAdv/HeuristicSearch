@@ -151,6 +151,12 @@ button.small { padding: 4px 9px; font-size: 12px; }
 .cg-cell.mark-partial .cg-btn { color: #ddccff; border-color: var(--p); background: #231a38; font-weight: 700; }
 .cg-cell.mark-wrong .cg-btn { color: #ffd0d0; border-color: var(--w); background: #341a1e; font-weight: 700; }
 
+/* 紧凑版（多策略面板里一屏要放好几张矩阵） */
+.cg-table.cg-compact { min-width: 250px; border-spacing: 1px; }
+.cg-table.cg-compact .cg-btn { padding: 2px 0; font-size: 9px; border-radius: 3px; }
+.cg-table.cg-compact th { font-size: 9px; }
+.cg-table.cg-compact th.cg-rowhead { width: 12px; }
+
 /* ---------------------------------------------------------------- 槽位 */
 .slots { display: grid; gap: 6px; grid-template-columns: repeat(5, 1fr); margin-bottom: 10px; }
 .slot {
@@ -291,6 +297,47 @@ td.best { color: var(--c); font-weight: 700; }
 .fbbtn.misplaced.sel { background: #1b4f8a; border-color: var(--m); }
 .fbbtn.partial.sel { background: #5b3aa8; border-color: var(--p); }
 .fbbtn.wrong.sel { background: #8f2f34; border-color: var(--w); }
+
+/* ---------------------------------------------------------------- 决策解释 */
+.dec-box { display: flex; flex-direction: column; gap: 8px; }
+.dec-head {
+  font-size: 12px; color: #c3cbd9; padding: 6px 9px; border-radius: 7px;
+  background: #12161e; border: 1px solid var(--border);
+}
+.dec-extra { display: flex; flex-wrap: wrap; gap: 6px; }
+.dec-chip {
+  font-size: 11px; color: var(--muted); background: var(--panel-2);
+  border: 1px solid var(--border); border-radius: 20px; padding: 2px 9px;
+}
+.dec-table { width: 100%; font-size: 11.5px; border-collapse: collapse; }
+.dec-table th {
+  text-align: left; font-weight: 500; color: var(--muted); padding: 4px 6px;
+  border-bottom: 1px solid var(--border); white-space: nowrap;
+}
+.dec-table td { padding: 4px 6px; border-bottom: 1px solid #1c2129; vertical-align: top; }
+.dec-table .dec-combo { font-variant-numeric: tabular-nums; white-space: nowrap; font-weight: 600; }
+.dec-table .dec-size { color: var(--muted); text-align: right; white-space: nowrap; }
+.dec-table .dec-reason { white-space: normal; line-height: 1.5; color: #c3cbd9; }
+.dec-out { color: #f5a524; cursor: help; }
+.reasonbar { margin: -2px 0 6px 48px; }
+details > summary {
+  cursor: pointer; font-size: 12px; color: var(--accent); padding: 3px 0;
+}
+details > summary:hover { text-decoration: underline; }
+details .dec-box { margin-top: 6px; }
+
+/* ---------------------------------------------------------------- 多策略对比 */
+.multi-grid {
+  display: grid; gap: 14px; padding: 16px 20px;
+  grid-template-columns: repeat(auto-fit, minmax(430px, 1fr)); align-items: start;
+}
+.multi-card { display: flex; flex-direction: column; gap: 8px; }
+.multi-card > header { margin-bottom: 0; }
+.multi-card .slots { margin-bottom: 0; }
+.slots.slots-compact { grid-template-columns: repeat(5, 1fr); gap: 4px; }
+.slots.slots-compact .slot { min-height: 32px; font-size: 11.5px; border-radius: 6px; }
+.history.history-compact { max-height: 24vh; }
+.history.history-compact .cell { min-width: 38px; font-size: 10.5px; }
 
 .banner {
   margin: 0 20px; padding: 10px 14px; border-radius: 9px; font-size: 13px; line-height: 1.65;

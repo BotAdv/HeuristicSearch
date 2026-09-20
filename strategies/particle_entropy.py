@@ -20,6 +20,7 @@ from typing import Dict, List, Optional, Sequence, Tuple
 import numpy as np
 
 from core.game import CANDIDATES, COMBO_INDEX, FEEDBACK_CODE, SECRET_DISTINCT, SEQ_LEN, Combo
+from strategies import explain
 from strategies.base import History, ParamSpec, Strategy
 from strategies.belief import PositionBelief
 
@@ -192,10 +193,10 @@ class ParticleEntropyStrategy(Strategy):
             self.particles = self.particles[: target * 4]
 
     # ------------------------------------------------------------------ 决策
-    def next_guess(self, history: History) -> List[Combo]:
-        self._sync(history)
+    def compute_guess(self, history: History) -> List[Combo]:
         P = self.particles
         if len(P) == 0:
+            self.note_extra("fallback", "粒子全部被淘汰，回退到纯随机猜测")
             return self._random_guess()
 
         finish_threshold = int(self.params["finish_particles"])
@@ -203,7 +204,21 @@ class ParticleEntropyStrategy(Strategy):
             uniq, counts = np.unique(P, axis=0, return_counts=True)
             if len(uniq) <= finish_threshold:
                 row = uniq[int(np.argmax(counts))]
-                return [CANDIDATES[int(k)] for k in row]
+                top = [CANDIDATES[int(k)] for k in row]
+                self.note_extra("particles", int(len(P)))
+                self.note_extra("finishMode", {
+                    "distinctParticles": int(len(uniq)),
+                    "threshold": finish_threshold,
+                    "share": round(float(counts.max()) / float(len(P)), 3),
+                })
+                for i, c in enumerate(top):
+                    self.note(
+                        i,
+                        f"粒子后验已收敛：{len(P)} 个粒子里只剩 {len(uniq)} 条不同序列"
+                        f"（≤ finish_particles={finish_threshold}），直接取出现最多的那一条，"
+                        f"本位置就是 {explain.combo_label(c)}",
+                    )
+                return top
 
         pool = self._candidate_guesses(P)
         objective = self.params["objective"]
@@ -211,6 +226,7 @@ class ParticleEntropyStrategy(Strategy):
         n = float(len(P))
         best_idx: Optional[np.ndarray] = None
         best_score = -float("inf")
+        best_spread: Dict[str, float] = {}
         for guess_idx in pool:
             codes, n_correct = evaluate_particles(P, guess_idx)
             if objective in ("entropy", "entropy_correct"):
@@ -222,17 +238,60 @@ class ParticleEntropyStrategy(Strategy):
                     score += bonus * (float(hits[0]) / n if len(hits) else 0.0)
                 else:
                     score += bonus * float(n_correct.mean())
+                detail = {
+                    "entropy": round(float(-(probs * np.log2(probs)).sum()), 3),
+                    "expectedCorrect": round(float(n_correct.mean()), 3),
+                    "distinctOutcomes": int(len(values)),
+                }
             elif objective == "expected_remaining":
                 _, counts = np.unique(codes, return_counts=True)
                 score = -float((counts.astype(np.float64) ** 2).sum()) / n
+                detail = {"distinctOutcomes": int(len(counts)), "expectedCorrect": round(float(n_correct.mean()), 3)}
             else:  # expected_correct
                 score = float(n_correct.mean())
+                detail = {"expectedCorrect": round(float(n_correct.mean()), 3)}
             if score > best_score + 1e-12:
                 best_score = score
                 best_idx = guess_idx
+                best_spread = detail
         if best_idx is None:
             best_idx = P[0]
-        return [CANDIDATES[int(k)] for k in best_idx]
+        chosen = [CANDIDATES[int(k)] for k in best_idx]
+        if self.explain:
+            self.note_extra("particles", int(len(P)))
+            self.note_extra("candidatePool", len(pool))
+            self.note_extra("objective", objective)
+            self.note_extra("finishBonus", bonus)
+            self.note_extra("bestScore", round(float(best_score), 3))
+            self.note_extra("bestSpread", best_spread)
+            self._note_particle_margins(P, chosen)
+        return chosen
+
+    def _note_particle_margins(self, P: np.ndarray, chosen: Sequence[Combo]) -> None:
+        """按粒子后验的边缘分布解释“为什么这一位是它”（只读，不调用随机数）。"""
+        total = int(len(P))
+        for i in range(SEQ_LEN):
+            values, counts = np.unique(P[:, i], return_counts=True)
+            order = np.argsort(-counts)
+            top = [(CANDIDATES[int(values[k])], int(counts[k])) for k in order[:3]]
+            share = top[0][1] / float(total) if total else 0.0
+            head = (
+                f"粒子后验：本位置出现最多的是 {explain.combo_label(top[0][0])}"
+                f"（{total} 个粒子里 {top[0][1]} 个，{share * 100:.0f}%）"
+            )
+            rest = "、".join(f"{explain.combo_label(c)} {n}" for c, n in top[1:]) if len(top) > 1 else "无并列"
+            tail = f"次优：{rest}" if len(top) > 1 else "没有次优候选"
+            chosen_note = ""
+            if i < len(chosen):
+                hit = next((n for c, n in top if c == chosen[i]), 0)
+                chosen_note = (
+                    f"；本轮取 {explain.combo_label(chosen[i])}"
+                    f"（该位粒子数 {hit}）"
+                )
+            self.note(i, f"{head}；{tail}{chosen_note}")
+
+    def explain_criterion(self) -> str:
+        return "粒子后验极大化反馈熵"
 
     def _candidate_guesses(self, P: np.ndarray) -> List[np.ndarray]:
         limit = int(self.params["candidate_pool"])

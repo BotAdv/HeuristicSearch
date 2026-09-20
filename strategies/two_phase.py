@@ -18,7 +18,7 @@
 """
 from __future__ import annotations
 
-from typing import Dict, List, Optional, Sequence
+from typing import Any, Dict, List, Optional, Sequence
 
 from core.game import CANDIDATES, SECRET_DISTINCT, SEQ_LEN, Combo, constant_sequence
 from strategies.base import History, ParamSpec, Strategy
@@ -81,12 +81,6 @@ class TwoPhaseStrategy(Strategy):
         self.used: Dict[Combo, int] = {c: 0 for c in CANDIDATES}
         self._pending_probe: List[Optional[Combo]] = []
         self.phase_a_rounds = 0
-        #: 设为 True 后，每轮会在 ``last_decision`` 里留下本轮每个位置的决策依据。
-        #: 仅用于复盘/分析（只读状态，不影响任何选择）。
-        self.explain = False
-        self.last_decision: Optional[Dict[str, object]] = None
-        self._explain_reasons: List[Optional[str]] = []
-        self._explain_extra: Dict[str, object] = {}
 
     def observe(self, guess: Sequence[Combo], feedback: Sequence[str]) -> None:
         self.belief.observe(guess, feedback)
@@ -101,12 +95,9 @@ class TwoPhaseStrategy(Strategy):
             self.support.observe(guess, feedback, exact_counts=False)
 
     # ------------------------------------------------------------------ 主循环
-    def next_guess(self, history: History) -> List[Combo]:
-        self._sync(history)
+    def compute_guess(self, history: History) -> List[Combo]:
         if self.phase == "A" and self._phase_a_done():
             self._enter_phase_b()
-        if self.explain:
-            self._explain_reset()
         if self.phase == "A":
             self.phase_a_rounds += 1
             guess = self._guess_phase_a()
@@ -114,45 +105,18 @@ class TwoPhaseStrategy(Strategy):
             guess = self._guess_phase_b()
         for c in guess:
             self.used[c] = self.used.get(c, 0) + 1
-        if self.explain:
-            self._explain_finish(guess, history)
         return guess
 
     # ------------------------------------------------------------------ 解释钩子
-    def _explain_reset(self) -> None:
-        self._explain_reasons = [None] * SEQ_LEN
-        self._explain_extra = {}
+    def explain_phase(self) -> Optional[str]:
+        return self.phase
 
-    def _explain_finish(self, guess: List[Combo], history: History) -> None:
-        in_list = [c for c in CANDIDATES if self.support.status.get(c) == IN]
-        out_list = [c for c in CANDIDATES if self.support.status.get(c) == OUT]
-        unknown = [c for c in CANDIDATES if self.support.status.get(c) == UNKNOWN]
-        candidates = []
-        for i in range(SEQ_LEN):
-            ci = sorted(self.belief.sets[i])
-            candidates.append(
-                {
-                    "position": i + 1,
-                    "size": len(ci),
-                    "chosen": guess[i] if i < len(guess) else None,
-                    "reason": self._explain_reasons[i] if i < len(self._explain_reasons) else None,
-                    "topCandidates": ci[:6],
-                }
-            )
-        self.last_decision = {
-            "round": len(history) + 1,
-            "phase": self.phase,
-            "phaseARounds": self.phase_a_rounds,
-            "support": {
-                "inList": in_list,
-                "inCount": len(in_list),
-                "outCount": len(out_list),
-                "unknownCount": len(unknown),
-                "counts": {c: self.support.count.get(c) for c in in_list},
-            },
-            "candidates": candidates,
-            **self._explain_extra,
-        }
+    def explain_criterion(self) -> str:
+        return "批次分类" if self.phase == "A" else "指派"
+
+    def explain_extra_fields(self) -> Dict[str, Any]:
+        #: two_phase 特有的展示字段：阶段 A 已经进行了几轮（前端与复盘报告都会用）
+        return {"phaseARounds": self.phase_a_rounds}
 
     # ------------------------------------------------------------------ 阶段 A
     def _phase_a_done(self) -> bool:
