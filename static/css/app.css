@@ -7,10 +7,12 @@
   --text: #e7ebf3;
   --muted: #8e9bb0;
   --accent: #5b8cff;
+  /* 反馈配色（全局统一，与候选矩阵的标记一致）：
+     CORRECT 绿 · MISPLACED 蓝 · PARTIAL 紫 · WRONG 红 */
   --c: #2ecc71;
-  --m: #f5a524;
-  --p: #4d9fff;
-  --w: #414a5a;
+  --m: #4d9fff;
+  --p: #a06bff;
+  --w: #ff5c5c;
   --radius: 10px;
 }
 
@@ -87,7 +89,7 @@ button.small { padding: 4px 9px; font-size: 12px; }
 /* ---------------------------------------------------------------- 布局 */
 .sandbox {
   display: grid; gap: 14px; padding: 16px 20px;
-  grid-template-columns: minmax(280px, 1fr) minmax(300px, 1fr) minmax(320px, 1.2fr);
+  grid-template-columns: minmax(360px, 1.1fr) minmax(300px, 1fr) minmax(320px, 1.1fr);
   align-items: start;
 }
 .lab { display: grid; gap: 14px; padding: 16px 20px; }
@@ -117,18 +119,37 @@ button.small { padding: 4px 9px; font-size: 12px; }
 .params-inline input[type="checkbox"] { width: 15px; height: 15px; }
 
 /* ---------------------------------------------------------------- 候选组合面板 */
-.palette { display: flex; flex-wrap: wrap; gap: 5px; }
-.combo {
-  border: 1px solid var(--border); background: var(--panel-2); color: var(--text);
-  border-radius: 6px; padding: 4px 7px; font-size: 12px; cursor: pointer;
-  font-variant-numeric: tabular-nums; min-width: 42px; text-align: center;
+.palette-wrap { overflow-x: auto; }
+
+/* 10×10 候选矩阵：行 = a，列 = b；(a,b) 与 (b,a) 是同一个组合 */
+.cg-table {
+  border-collapse: separate; border-spacing: 2px;
+  table-layout: fixed; width: 100%; min-width: 330px;
 }
-.combo:hover:not(:disabled) { border-color: var(--accent); background: #202838; }
-.combo.removed {
+.cg-table th { padding: 0; font-size: 10.5px; color: var(--muted); font-weight: 500; text-align: center; }
+.cg-table th.cg-corner { font-size: 9px; color: #6d788a; }
+.cg-table th.cg-rowhead { width: 16px; }
+.cg-cell { padding: 0; }
+.cg-btn {
+  width: 100%; padding: 4px 0; font-size: 10.5px; line-height: 1.15;
+  background: var(--panel-2); border: 1px solid var(--border); border-radius: 4px;
+  color: var(--text); cursor: pointer; font-variant-numeric: tabular-nums;
+}
+.cg-btn:hover:not(:disabled) { border-color: var(--accent); background: #202838; }
+/* 自组合（对角线）与普通格稍微区分，但仍可点选 */
+.cg-diag .cg-btn { background: #1a2130; }
+/* 被规则删除的 10 个组合：表中 20 格，灰色且不可选 */
+.cg-removed .cg-btn {
   color: #5a6373; background: #14171d; border-style: dashed; cursor: not-allowed;
   text-decoration: line-through;
 }
-.combo.used { border-color: var(--accent); background: #1e2a44; }
+/* 本轮猜测里用到的组合：高亮一个描边（不影响颜色标记） */
+.cg-picked .cg-btn { outline: 2px solid var(--accent); outline-offset: -2px; }
+/* 反馈状态标记：颜色只是备忘，不影响点选交互 */
+.cg-cell.mark-correct .cg-btn { color: #b6f2cd; border-color: var(--c); background: #16301f; font-weight: 700; }
+.cg-cell.mark-misplaced .cg-btn { color: #cfe2ff; border-color: var(--m); background: #10253c; font-weight: 700; }
+.cg-cell.mark-partial .cg-btn { color: #ddccff; border-color: var(--p); background: #231a38; font-weight: 700; }
+.cg-cell.mark-wrong .cg-btn { color: #ffd0d0; border-color: var(--w); background: #341a1e; font-weight: 700; }
 
 /* ---------------------------------------------------------------- 槽位 */
 .slots { display: grid; gap: 6px; grid-template-columns: repeat(5, 1fr); margin-bottom: 10px; }
@@ -140,9 +161,9 @@ button.small { padding: 4px 9px; font-size: 12px; }
 .slot .idx { font-size: 10px; color: var(--muted); }
 .slot.filled { border-style: solid; border-color: var(--accent); background: #1b2436; font-weight: 600; }
 .slot.correct { border-color: var(--c); background: #16301f; }
-.slot.misplaced { border-color: var(--m); background: #33260f; }
-.slot.partial { border-color: var(--p); background: #16283f; }
-.slot.wrong { border-color: var(--w); background: #1a1d24; }
+.slot.misplaced { border-color: var(--m); background: #10253c; }
+.slot.partial { border-color: var(--p); background: #231a38; }
+.slot.wrong { border-color: var(--w); background: #341a1e; }
 
 .legend { display: flex; gap: 14px; font-size: 11.5px; color: var(--muted); flex-wrap: wrap; }
 .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 5px; }
@@ -167,9 +188,9 @@ button.small { padding: 4px 9px; font-size: 12px; }
 }
 .cell .fb { font-size: 10px; font-weight: 700; letter-spacing: .5px; }
 .cell.correct { border-color: var(--c); background: #16301f; }
-.cell.misplaced { border-color: var(--m); background: #33260f; }
-.cell.partial { border-color: var(--p); background: #16283f; }
-.cell.wrong { border-color: var(--w); background: #1a1d24; }
+.cell.misplaced { border-color: var(--m); background: #10253c; }
+.cell.partial { border-color: var(--p); background: #231a38; }
+.cell.wrong { border-color: var(--w); background: #341a1e; }
 
 /* ---------------------------------------------------------------- 表格 */
 .table-wrap { overflow: auto; max-height: 60vh; }
@@ -238,7 +259,7 @@ td.best { color: var(--c); font-weight: 700; }
   padding: 14px 20px; border-top: 1px solid var(--border); color: var(--muted); font-size: 12px;
 }
 .fb-c { color: var(--c); } .fb-m { color: var(--m); }
-.fb-p { color: var(--p); } .fb-w { color: #8b94a5; }
+.fb-p { color: var(--p); } .fb-w { color: #ff8a8a; }
 
 /* ---------------------------------------------------------------- 逐步猜测模式 */
 .human {
@@ -267,15 +288,15 @@ td.best { color: var(--c); font-weight: 700; }
 .fbbtn:hover { border-color: var(--accent); color: var(--text); }
 .fbbtn.sel { color: #fff; font-weight: 700; }
 .fbbtn.correct.sel { background: #1d7a44; border-color: var(--c); }
-.fbbtn.misplaced.sel { background: #8a5c10; border-color: var(--m); }
-.fbbtn.partial.sel { background: #1b4f8a; border-color: var(--p); }
-.fbbtn.wrong.sel { background: #48505f; border-color: #78829a; }
+.fbbtn.misplaced.sel { background: #1b4f8a; border-color: var(--m); }
+.fbbtn.partial.sel { background: #5b3aa8; border-color: var(--p); }
+.fbbtn.wrong.sel { background: #8f2f34; border-color: var(--w); }
 
 .banner {
   margin: 0 20px; padding: 10px 14px; border-radius: 9px; font-size: 13px; line-height: 1.65;
   background: var(--panel-2); border: 1px solid var(--border);
 }
-.banner.warn { background: #33260f; border-color: var(--m); color: #ffd28a; }
+.banner.warn { background: #33260f; border-color: #f5a524; color: #ffd28a; }
 .banner.ok { background: #16301f; border-color: var(--c); color: #9ff0bf; }
 .banner.error { background: #3a1f24; border-color: #6b2b33; color: #ff9d9d; }
 .banner code { background: rgba(255,255,255,.08); padding: 1px 5px; border-radius: 4px; }

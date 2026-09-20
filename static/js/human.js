@@ -9,7 +9,7 @@
     W: '完全错误：该组合不在秘密里，且与 x_i 无共享对象',
   };
 
-  const state = { strategies: [], game: null, answers: new Array(10).fill(null), viewing: null };
+  const state = { meta: null, strategies: [], game: null, answers: new Array(10).fill(null), viewing: null };
   const $ = id => document.getElementById(id);
   let cellButtons = [];
 
@@ -112,6 +112,7 @@
         b.addEventListener('click', () => {
           state.answers[i] = letter;
           renderGrid();
+          renderMatrix();
           focusCell(i + 1);
         });
         row.appendChild(b);
@@ -121,6 +122,28 @@
       cellButtons.push([...row.children]);
     });
     updateSubmitState();
+  }
+
+  function renderMatrix() {
+    if (!state.meta) return;
+    const source = state.viewing || state.game;
+    const rounds = state.viewing
+      ? (state.viewing.trace || [])          // 看存档：只有已提交的轮次
+      : (source ? (source.history || []) : []);
+    let marks = accumulateMarks(rounds);
+    if (!state.viewing && state.game && state.game.pendingGuess) {
+      // 正在录入的反馈即时叠加，方便边看边对（标注为“待提交”）
+      marks = overlayMarks(marks, state.game.pendingGuess, state.answers, '待提交');
+    }
+    const pending = state.viewing ? [] : ((state.game && state.game.pendingGuess) || []);
+    renderComboMatrix($('comboMatrix'), {
+      objects: state.meta.objects,
+      removed: removedKeySet(state.meta.removedCombos),
+      marks,
+      picked: new Set(pending.filter(Boolean).map(comboKey)),
+    });
+    const badge = $('matrixBadge');
+    if (badge) badge.textContent = `${state.meta.candidateCount} 候选`;
   }
 
   function focusCell(index) {
@@ -151,7 +174,7 @@
       const btn = document.createElement('button');
       btn.className = 'small';
       btn.textContent = '返回当前对局';
-      btn.addEventListener('click', () => { state.viewing = null; renderHistory(); $('histHint').textContent = '每一轮由策略出招、你录入反馈。'; });
+      btn.addEventListener('click', () => { state.viewing = null; renderHistory(); renderMatrix(); $('histHint').textContent = '每一轮由策略出招、你录入反馈。'; });
       back.appendChild(btn);
       host.appendChild(back);
     }
@@ -195,6 +218,7 @@
     }
     renderGrid();
     renderHistory();
+    renderMatrix();
     refreshStatus();
     $('btnUndo').disabled = !next || (!(next.history || []).length && !next.pendingGuess);
     $('btnSave').disabled = !next || !(next.history || []).length;
@@ -301,6 +325,7 @@
       const record = await API.get(`/api/human/archive/${gid}`);
       state.viewing = record;
       renderHistory();
+      renderMatrix();       // 看存档时矩阵也只展示已提交的轮次
     } catch (e) { toast(e.message, true); }
   }
 
@@ -309,6 +334,7 @@
     try {
       const res = await API.get('/api/strategies');
       state.strategies = res.strategies;
+      state.meta = await API.get('/api/meta');
       const sel = $('strategy');
       state.strategies.forEach(s => {
         const o = document.createElement('option');
@@ -319,6 +345,7 @@
       sel.value = 'two_phase';
       sel.addEventListener('change', renderParamControls);
       renderParamControls();
+      renderMatrix();
       refreshArchive();
     } catch (e) { toast(e.message, true); }
 
@@ -330,17 +357,20 @@
     $('btnAllC').addEventListener('click', () => {
       state.answers = new Array(10).fill('C');
       renderGrid();
+      renderMatrix();
     });
     $('btnClear').addEventListener('click', () => {
       state.answers = new Array(10).fill(null);
       $('quick').value = '';
       renderGrid();
+      renderMatrix();
     });
     $('quick').addEventListener('input', ev => {
       const letters = ev.target.value.toUpperCase().replace(/[^CMPW]/g, '').slice(0, 10).split('');
       state.answers = new Array(10).fill(null);
       letters.forEach((ch, i) => { state.answers[i] = ch; });
       renderGrid();
+      renderMatrix();
     });
     document.addEventListener('keydown', ev => {
       if (ev.target.tagName === 'INPUT' || ev.target.tagName === 'SELECT') return;

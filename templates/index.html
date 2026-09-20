@@ -37,16 +37,25 @@
 <main class="sandbox">
   <section class="panel">
     <header>
-      <h2>候选组合 <span class="badge" id="paletteCount">45</span></h2>
-      <p class="hint">点击组合填入下一个空槽；灰色划掉的为被规则删除的 10 个组合。</p>
+      <h2>候选组合矩阵 <span class="badge" id="paletteCount">45</span></h2>
+      <p class="hint">行 = 前一位 a，列 = 后一位 b；<b>a-b 与 b-a 是同一个组合</b>，
+        任点一格即选中规范形式 (min,max)，例如点「6-3」选的是 (3,6)。
+        虚线划掉的 20 格 = 被规则删除的 10 个组合。</p>
+      <div class="legend">
+        <span><i class="dot c"></i>CORRECT 已就位</span>
+        <span><i class="dot m"></i>MISPLACED 属于秘密</span>
+        <span><i class="dot p"></i>PARTIAL 不属于秘密</span>
+        <span><i class="dot w"></i>WRONG 不属于秘密</span>
+      </div>
+      <p class="hint">颜色只是逐轮反馈的备忘，<b>不影响点选</b>；蓝框格是本轮猜测用到的组合。</p>
     </header>
-    <div id="palette" class="palette"></div>
+    <div id="palette" class="palette-wrap"><div id="comboMatrix"></div></div>
   </section>
 
   <section class="panel">
     <header>
       <h2>猜测序列 <span class="badge" id="slotCount">0/10</span></h2>
-      <p class="hint">点击槽位可清空该位置。</p>
+      <p class="hint">点击槽位可清空该位置；槽位颜色 = 该位的反馈。</p>
     </header>
     <div id="slots" class="slots"></div>
     <div class="legend">

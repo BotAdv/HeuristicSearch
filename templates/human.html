@@ -53,6 +53,22 @@
     </div>
   </section>
 
+  <section class="panel">
+    <header>
+      <h2>候选组合矩阵 <span class="badge" id="matrixBadge">45 候选</span></h2>
+      <p class="hint">行 = 前一位 a，列 = 后一位 b；<b>a-b 与 b-a 是同一个组合</b>（只作标记，不可点选）。
+        虚线划掉的 20 格 = 被规则删除的 10 个组合。</p>
+      <div class="legend">
+        <span><i class="dot c"></i>CORRECT 已就位</span>
+        <span><i class="dot m"></i>MISPLACED 属于秘密</span>
+        <span><i class="dot p"></i>PARTIAL 不属于秘密</span>
+        <span><i class="dot w"></i>WRONG 不属于秘密</span>
+      </div>
+      <p class="hint" id="matrixHint">已提交轮次的反馈会自动累积到格子上；你正在录入的反馈会即时叠加（标注为“待提交”）。</p>
+    </header>
+    <div class="palette-wrap"><div id="comboMatrix"></div></div>
+  </section>
+
   <section class="panel wide">
     <header>
       <h2>对局历史 <span class="badge" id="histBadge">0 轮</span></h2>

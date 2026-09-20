@@ -21,6 +21,7 @@
 | 09 | [09_常见问题与排错.md](09_常见问题与排错.md) | 环境、编码、性能、语义陷阱 | 遇到问题时 |
 | 10 | [10_逐步猜测模式.md](10_逐步猜测模式.md) | **人工录入反馈**的逐步猜测模式：流程、一致性校验、落盘与接口 | 用 `/human` 页面时 |
 | 11 | [11_对局复盘_*.md](11_对局复盘_260920-00.md) | **程序自动生成**：单局复盘（回放校验 + 每轮每位选择依据 + 一致性自检） | 想知道“策略为什么这么下” |
+| 12 | [12_候选矩阵与状态着色.md](12_候选矩阵与状态着色.md) | 沙盒/逐步猜测共用的 **10×10 候选矩阵**：等价格语义、反馈配色、交互规则 | 看界面或改造前端时 |
 | — | [CHANGELOG.md](CHANGELOG.md) | 变更记录 | 看改动历史 |
 | — | `_data/events.jsonl` | 机器可读事件流（对局/模拟/交互） | 二次分析 |
 
@@ -33,7 +34,7 @@ python app.py                     # http://127.0.0.1:5000
 ```
 
 ```powershell
-python -m unittest discover -s tests            # 71 个单元测试
+python -m unittest discover -s tests            # 83 个单元测试
 python experiments/benchmark.py --games 200     # 命令行基准实验（规则内）
 python experiments/benchmark.py --all-presets   # 跑完全部预置实验
 python experiments/analyze_game.py <gameId>     # 复盘某局：回放校验 + 每轮选择依据

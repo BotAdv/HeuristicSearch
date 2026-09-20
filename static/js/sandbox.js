@@ -60,21 +60,16 @@
   }
 
   function renderPalette() {
-    const host = $('palette');
-    host.innerHTML = '';
     $('paletteCount').textContent = state.meta.candidateCount;
-    const removed = new Set(state.meta.removedCombos.map(c => c.join('-')));
-    state.meta.allCombos.forEach(c => {
-      const btn = document.createElement('button');
-      btn.className = 'combo' + (removed.has(c.join('-')) ? ' removed' : '');
-      btn.textContent = comboLabel(c);
-      if (removed.has(c.join('-'))) {
-        btn.disabled = true;
-        btn.title = '该组合已被规则删除，不属于候选集合 S';
-      } else {
-        btn.addEventListener('click', () => place(c));
-      }
-      host.appendChild(btn);
+    // 逐轮累积每个组合的反馈标记（手动 / 策略自动都一样）
+    const marks = accumulateMarks(state.game ? (state.game.history || []) : []);
+    const picked = new Set(state.slots.filter(Boolean).map(comboKey));
+    renderComboMatrix($('comboMatrix'), {
+      objects: state.meta.objects,
+      removed: removedKeySet(state.meta.removedCombos),
+      marks,
+      picked,
+      onPick: place,
     });
   }
 
@@ -84,6 +79,7 @@
     if (idx < 0) { toast('10 个槽位已填满，请先清空或删除某个槽位'); return; }
     state.slots[idx] = combo;
     renderSlots();
+    renderPalette();
   }
 
   function renderSlots(lastFeedback) {
@@ -97,6 +93,7 @@
         if (isStrategyMode()) return;
         state.slots[i] = null;
         renderSlots();
+        renderPalette();
       });
       host.appendChild(div);
     });
@@ -160,6 +157,7 @@
       state.slots = last.guess.slice();
     }
     renderSlots(lastFeedback);
+    renderPalette();      // 每轮结束后刷新候选矩阵的颜色标记
     renderHistory();
     renderSecret();
     updateButtons();
@@ -255,6 +253,7 @@
     $('btnClear').addEventListener('click', () => {
       state.slots = new Array(10).fill(null);
       renderSlots();
+      renderPalette();
     });
     document.addEventListener('keydown', ev => {
       if (ev.key === 'Enter') { ev.preventDefault(); step(); }
