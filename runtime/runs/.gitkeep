@@ -1,0 +1,2 @@
+# 该目录保存每次模拟运行的 JSON 结果（runtime/runs/<job_id>.json）。
+# 内容属于运行期产物，默认被 .gitignore 忽略，仅保留本文件以维持目录结构。

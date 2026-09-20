@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{ title }} · 组合猜序列启发式搜索沙盒</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo">HS</span>
+      <div>
+        <div class="brand-title">组合猜序列 · 启发式搜索沙盒</div>
+        <div class="brand-sub">U={1..10}｜55 组合 − 10 删除 = 45 候选｜序列长度 10｜秘密组合互异</div>
+      </div>
+    </div>
+    <nav class="nav">
+      <a href="{{ url_for('pages.index') }}" class="{{ 'active' if page == 'sandbox' else '' }}">沙盒</a>
+      <a href="{{ url_for('pages.strategies_page') }}" class="{{ 'active' if page == 'strategies' else '' }}">策略库</a>
+      <a href="{{ url_for('pages.lab_page') }}" class="{{ 'active' if page == 'lab' else '' }}">模拟实验台</a>
+      <a href="/api/meta" target="_blank" rel="noopener">API</a>
+    </nav>
+  </header>
+
+  <div id="toast" class="toast" hidden></div>
+
+  {% block content %}{% endblock %}
+
+  <footer class="footer">
+    <span>反馈：<b class="fb-c">C</b> 完全正确 ·
+      <b class="fb-m">M</b> 正确但位置错误 ·
+      <b class="fb-p">P</b> 部分正确 ·
+      <b class="fb-w">W</b> 完全错误</span>
+    <span class="muted">MISPLACED 会掩盖该位置与秘密的真实关系</span>
+  </footer>
+
+  <script src="{{ url_for('static', filename='js/api.js') }}"></script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

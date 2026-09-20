@@ -1,0 +1,21 @@
+# 运行时产物与缓存
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.venv/
+venv/
+
+# 编辑器
+.idea/
+.vscode/
+*.log
+
+# 运行期结果（可按需保留，默认忽略以保持仓库干净）
+runtime/runs/*.json
+runtime/games/*
+!runtime/runs/.gitkeep
+!runtime/games/.gitkeep
+
+# 文档日志（逐轮明细体积较大，按需决定是否跟踪）
+Doc/_data/events.jsonl

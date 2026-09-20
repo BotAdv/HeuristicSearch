@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="toolbar">
+  <div class="group">
+    <label for="preset">实验预设</label>
+    <select id="preset"><option value="">（自定义）</option></select>
+  </div>
+  <button id="loadPreset">载入预设</button>
+  <button id="resetPlan">重置为默认对比</button>
+</div>
+
+<main class="lab">
+  <section class="panel">
+    <header>
+      <h2>1 · 实验配置</h2>
+      <p class="hint">勾选策略并微调参数；所有策略共享同一批秘密序列，因此可以做逐局配对比较。</p>
+    </header>
+    <div class="form-grid">
+      <div class="group"><label for="games">每策略局数</label>
+        <input id="games" type="number" value="200" min="1" max="5000"></div>
+      <div class="group"><label for="seed">随机种子</label>
+        <input id="seed" type="number" value="20260920" min="0"></div>
+      <div class="group"><label for="maxRounds">轮次上限</label>
+        <input id="maxRounds" type="number" value="60" min="1" max="2000"></div>
+      <div class="group"><label for="secretMode">秘密生成方式</label>
+        <select id="secretMode">
+          <option value="distinct">互异组合（规则内）</option>
+          <option value="repeated">允许重复（规则外对照）</option>
+          <option value="constant">常数序列（规则外压力测试）</option>
+        </select></div>
+    </div>
+    <div id="planList" class="plan-list"></div>
+    <div class="row">
+      <button id="btnStart" class="primary">开始模拟</button>
+      <button id="btnCancel" disabled>取消</button>
+      <span id="jobHint" class="muted"></span>
+    </div>
+    <div class="progress"><div id="progressBar" class="progress-bar"></div></div>
+  </section>
+
+  <section class="panel" id="resultPanel" hidden>
+    <header>
+      <h2>2 · 汇总指标</h2>
+      <p class="hint">截尾口径：未在轮次上限内解出的对局按上限计入均值/分位数；成功率单独给出。</p>
+      <div class="row">
+        <button id="btnCsv">导出 CSV</button>
+        <button id="btnJson">导出 JSON</button>
+        <span id="metaLine" class="muted"></span>
+      </div>
+    </header>
+    <div class="table-wrap"><table id="aggTable"></table></div>
+  </section>
+
+  <section class="panel" id="chartPanel" hidden>
+    <header>
+      <h2>3 · 步数对比</h2>
+      <p class="hint">柱=平均步数，刻度点分别标注中位数 / P90 / P99 / 最坏步数。</p>
+    </header>
+    <div id="barChart" class="chart"></div>
+    <header><h2>步数分布</h2>
+      <div class="group"><label for="histStrategy">策略</label><select id="histStrategy"></select></div>
+    </header>
+    <div id="histChart" class="chart"></div>
+  </section>
+
+  <section class="panel" id="pairPanel" hidden>
+    <header>
+      <h2>4 · 两两配对比较</h2>
+      <p class="hint">meanDiff = a 的轮次 − b 的轮次（负数表示 a 更快）；p 值来自双侧符号检验。</p>
+    </header>
+    <div class="table-wrap"><table id="pairTable"></table></div>
+  </section>
+
+  <section class="panel" id="runsPanel">
+    <header><h2>历史运行</h2><button id="btnRefreshRuns">刷新</button></header>
+    <div class="table-wrap"><table id="runsTable"></table></div>
+  </section>
+</main>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/lab.js') }}"></script>
+{% endblock %}

@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="toolbar">
+  <div class="group">
+    <label for="qpStrategy">快速试玩</label>
+    <select id="qpStrategy"></select>
+  </div>
+  <div class="group">
+    <label for="qpRounds">轮次上限</label>
+    <input id="qpRounds" type="number" value="40" min="1" max="2000" style="width:80px">
+  </div>
+  <div class="group">
+    <label for="qpSecretMode">秘密生成方式</label>
+    <select id="qpSecretMode">
+      <option value="distinct">互异组合（规则内）</option>
+      <option value="repeated">允许重复（规则外对照）</option>
+      <option value="constant">常数序列（规则外压力测试）</option>
+    </select>
+  </div>
+  <button id="qpRun" class="primary">跑一局</button>
+</div>
+
+<div id="qpResult" class="status">选择任意策略卡片上的「快速试玩」按钮，或点击上方按钮跑一局。</div>
+
+<main class="cards" id="cards"></main>
+
+<section class="panel" id="tracePanel" hidden>
+  <header><h2>对局轨迹</h2></header>
+  <div id="trace" class="history"></div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/strategies.js') }}"></script>
+{% endblock %}
