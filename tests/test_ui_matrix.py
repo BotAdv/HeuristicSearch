@@ -298,5 +298,78 @@ class TestSandboxStatePersistence(unittest.TestCase):
         self.assertIn("state.toolbars", self.sandbox, "参数栏的展开状态也要记住")
 
 
+class TestLayout18(unittest.TestCase):
+    """1.8.0 的布局与交互契约：真正能隐藏参数栏、单策略两列、公共操作条、
+    逐步猜测两列 + 历史下移、策略库卡片内联轨迹。"""
+
+    def setUp(self):
+        self.css = read(STATIC / "css" / "app.css")
+        self.index = read(TEMPLATES / "index.html")
+        self.human = read(TEMPLATES / "human.html")
+        self.strategies_html = read(TEMPLATES / "strategies.html")
+        self.strategies_js = read(STATIC / "js" / "strategies.js")
+
+    @staticmethod
+    def _block(css: str, selector: str) -> str:
+        match = re.search(rf"^{re.escape(selector)}\s*\{{(.*?)\}}", css, re.M | re.S)
+        return match.group(1) if match else ""
+
+    def test_hidden_attribute_beats_component_display(self):
+        """坑：`.toolbar{display:flex}` 会盖掉 UA 的 `[hidden]{display:none}`，
+        导致 F9 收起的参数栏仍然显示 —— 必须有显式规则兜底。"""
+        self.assertRegex(self.css, r"\[hidden\]\s*\{\s*display:\s*none\s*!important\s*;?\s*\}",
+                         "[hidden] 必须强制 display:none，否则 toolbar 收不起来")
+        toolbar = self._block(self.css, ".toolbar")
+        self.assertIn("display: flex", toolbar)
+
+    def test_single_strategy_panes_use_two_columns(self):
+        """手动试玩 / 策略自动只有两张卡片 → 两列铺满，不预留第三列。"""
+        sandbox = self._block(self.css, ".sandbox")
+        self.assertEqual(sandbox.count("minmax("), 2,
+                         f"单策略页签应为两列（当前 {sandbox!r}）")
+        self.assertNotIn("repeat(3", sandbox)
+
+    def test_human_page_is_two_columns_without_wide_span(self):
+        human = self._block(self.css, ".human")
+        self.assertIn("grid-template-columns: repeat(2, minmax(0, 1fr))", human)
+        self.assertNotIn("repeat(3", human, "逐步猜测页不再每行 3 列")
+        self.assertNotIn("panel wide", self.human, "wide 类已无定义，不要再挂")
+
+    def test_multi_buttons_live_in_common_bar(self):
+        """多策略对比：三个公共按钮从工具栏搬到面板上方的公共条（与状态同一行）。"""
+        pane = self.index.split('data-pane="multi"')[1]
+        toolbar_part, rest = pane.split('class="bar-common"', 1)
+        for bid in ("multi-btnNew", "multi-btnStep", "multi-btnPlay"):
+            self.assertNotIn(bid, toolbar_part, f"{bid} 不应再留在工具栏里")
+            self.assertIn(bid, rest, f"{bid} 应在公共操作条里")
+        self.assertIn('class="bar-actions"', rest)
+        # 公共条必须在卡片区之前
+        self.assertLess(pane.index('class="bar-common"'), pane.index('data-role="cards"'))
+        for cls in (".bar-common", ".bar-actions"):
+            self.assertIn(cls, self.css, f"缺少 {cls} 样式")
+
+    def test_strategies_page_drops_strategy_select_and_bottom_panel(self):
+        self.assertNotIn("qpStrategy", self.strategies_html, "顶部「试玩策略」下拉框已取消")
+        self.assertNotIn("tracePanel", self.strategies_html, "底部公共轨迹面板已取消")
+        self.assertIn("qpHideTraces", self.strategies_html, "需要「隐藏轨迹」按钮")
+        self.assertIn("runAll", self.strategies_js, "「跑一局」= 所有卡片各跑一局")
+        self.assertIn("collapseAll", self.strategies_js)
+        self.assertIn("card-trace", self.strategies_js, "轨迹要渲染在卡片内部")
+        self.assertIn("card-main", self.strategies_js)
+        self.assertIn("renderRound(", self.strategies_js, "轨迹复用统一的轮次渲染")
+        # 展开的卡片跨两列：参数在左、轨迹在右
+        expanded = self._block(self.css, ".card.expanded")
+        self.assertIn("grid-column: span 2", expanded)
+        self.assertIn("grid-template-columns", expanded)
+        self.assertIn(".card-trace", self.css)
+
+    def test_strategies_toolbar_has_run_and_hide_only(self):
+        """顶部只剩：轮次上限 / 秘密生成方式 / 跑一局 / 隐藏轨迹。"""
+        toolbar = self.strategies_html.split("<div class=\"toolbar\">")[1].split("</div>\n\n<div id=")[0]
+        for keep in ("qpRounds", "qpSecretMode", "qpRun", "qpHideTraces"):
+            self.assertIn(keep, toolbar, f"顶部应保留 {keep}")
+        self.assertEqual(toolbar.count("<button"), 2, "顶部应恰好两个按钮：跑一局 / 隐藏轨迹")
+
+
 if __name__ == "__main__":
     unittest.main()

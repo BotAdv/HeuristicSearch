@@ -18,6 +18,10 @@
 
 * { box-sizing: border-box; }
 
+/* 要素级 hidden 属性必须能赢过组件自己的 display（如 .toolbar{display:flex}）
+   —— UA 样式表的 [hidden]{display:none} 会被作者样式表覆盖，这里显式声明。 */
+[hidden] { display: none !important; }
+
 body {
   margin: 0;
   background: var(--bg);
@@ -87,9 +91,10 @@ button.small { padding: 4px 9px; font-size: 12px; }
 .status.ok { color: var(--c); }
 
 /* ---------------------------------------------------------------- 布局 */
+/* 单策略页签只有两张卡片（候选矩阵 + 历史序列）→ 两列铺满，右侧不预留空位 */
 .sandbox {
   display: grid; gap: 14px; padding: 16px 20px;
-  grid-template-columns: minmax(360px, 1.1fr) minmax(300px, 1fr) minmax(320px, 1.1fr);
+  grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr);
   align-items: start;
 }
 .lab { display: grid; gap: 14px; padding: 16px 20px; }
@@ -97,7 +102,7 @@ button.small { padding: 4px 9px; font-size: 12px; }
   display: grid; gap: 14px; padding: 16px 20px;
   grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
 }
-@media (max-width: 1100px) { .sandbox { grid-template-columns: 1fr; } }
+@media (max-width: 1080px) { .sandbox { grid-template-columns: 1fr; } }
 
 .panel {
   background: var(--panel); border: 1px solid var(--border);
@@ -324,12 +329,13 @@ td.best { color: var(--c); font-weight: 700; }
 .fb-p { color: var(--p); } .fb-w { color: #ff8a8a; }
 
 /* ---------------------------------------------------------------- 逐步猜测模式 */
+/* 默认每行 2 列：本轮猜测 | 候选矩阵 / 对局历史 | 决策解释 / 已落盘对局 */
 .human {
   display: grid; gap: 14px; padding: 16px 20px;
-  grid-template-columns: minmax(400px, 1.5fr) minmax(320px, 1fr) minmax(300px, 1fr);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   align-items: start;
 }
-@media (max-width: 1300px) { .human { grid-template-columns: 1fr; } }
+@media (max-width: 1080px) { .human { grid-template-columns: 1fr; } }
 
 .fggrid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; margin-bottom: 12px; }
 @media (max-width: 760px) { .fggrid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
@@ -414,6 +420,38 @@ details .dec-box { margin-top: 6px; }
 .lockbill { font-size: 11px; color: #9ff0bf; }
 
 /* ---------------------------------------------------------------- 多策略对比 */
+/* 三个面板上方的公共条：左边是对局状态，右边是公共操作（开新局 / 各走一步 / 自动跑完） */
+.bar-common {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  flex-wrap: wrap; padding: 8px 20px; border-bottom: 1px solid var(--border);
+  background: #10141b;
+}
+.bar-common .status { padding: 0; border: 0; background: none; flex: 1 1 320px; }
+.bar-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.bar-actions button { padding: 6px 12px; font-size: 12.5px; }
+
+/* ---------------------------------------------------------------- 策略库：卡片内联对局轨迹 */
+.card-main { display: flex; flex-direction: column; gap: 10px; }
+.card-trace { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.card.expanded {
+  grid-column: span 2;
+  display: grid; gap: 14px; align-items: start;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr);
+}
+@media (max-width: 1280px) {
+  .card.expanded { grid-column: span 1; grid-template-columns: 1fr; }
+}
+.trace-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  flex-wrap: wrap; font-size: 11.5px; color: var(--muted);
+  border-bottom: 1px dashed var(--border); padding-bottom: 6px;
+}
+.trace-head b { color: var(--text); }
+.card-trace .history { max-height: 46vh; }
+.card-trace .hrow { font-size: 11.5px; }
+.card-trace .hcells .cell { min-width: 36px; font-size: 10.5px; }
+.trace-empty { font-size: 12px; color: var(--muted); }
+
 .multi-grid {
   display: grid; gap: 14px; padding: 16px 20px;
   grid-template-columns: repeat(auto-fit, minmax(430px, 1fr)); align-items: start;

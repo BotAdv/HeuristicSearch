@@ -1,10 +1,8 @@
 {% extends "base.html" %}
 {% block content %}
+{# 策略卡片：每张卡片自带「快速试玩」，轨迹展开在该卡片**右侧**（卡片本身跨两列）。
+   顶部的「跑一局」= 让所有卡片用各自的参数各跑一局并展开轨迹；「隐藏轨迹」= 全部收起。 #}
 <div class="toolbar">
-  <div class="group">
-    <label for="qpStrategy">快速试玩</label>
-    <select id="qpStrategy"></select>
-  </div>
   <div class="group">
     <label for="qpRounds">轮次上限</label>
     <input id="qpRounds" type="number" value="40" min="1" max="2000" style="width:80px">
@@ -17,17 +15,13 @@
       <option value="constant">常数序列（规则外压力测试）</option>
     </select>
   </div>
-  <button id="qpRun" class="primary">跑一局</button>
+  <button id="qpRun" class="primary" title="所有卡片用各自面板上的参数各跑一局，并在卡片右侧展开对局轨迹">跑一局</button>
+  <button id="qpHideTraces" title="收起所有卡片右侧的对局轨迹">隐藏轨迹</button>
 </div>
 
-<div id="qpResult" class="status">选择任意策略卡片上的「快速试玩」按钮，或点击上方按钮跑一局。</div>
+<div id="qpResult" class="status">点「跑一局」：所有策略会用各自卡片上的参数各跑一局，轨迹展开在卡片右侧。</div>
 
 <main class="cards" id="cards"></main>
-
-<section class="panel" id="tracePanel" hidden>
-  <header><h2>对局轨迹</h2></header>
-  <div id="trace" class="history"></div>
-</section>
 {% endblock %}
 
 {% block scripts %}

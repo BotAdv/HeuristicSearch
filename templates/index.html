@@ -87,9 +87,6 @@
     <div class="group checkbox">
       <label><input type="checkbox" id="multi-reveal"> 显示秘密</label>
     </div>
-    <button id="multi-btnNew" class="primary">开新局</button>
-    <button id="multi-btnStep">所有策略各走一步</button>
-    <button id="multi-btnPlay">自动跑完</button>
   </div>
   <section class="panel inline-panel">
     <header>
@@ -103,7 +100,15 @@
       <button id="multi-btnPlanAdd">+ 添加策略</button>
     </div>
   </section>
-  <div id="multi-status" class="status">配置好策略后点「开新局」：所有策略会拿到同一条秘密。</div>
+  {# 三个面板的公共操作条：左边对局状态、右边公共按钮（不在工具栏里，始终与面板同屏） #}
+  <div class="bar-common">
+    <div id="multi-status" class="status">配置好策略后点「开新局」：所有策略会拿到同一条秘密。</div>
+    <div class="bar-actions">
+      <button id="multi-btnNew" class="primary">开新局</button>
+      <button id="multi-btnStep">所有策略各走一步</button>
+      <button id="multi-btnPlay">自动跑完</button>
+    </div>
+  </div>
   <main class="multi-grid" data-role="cards"></main>
 </section>
 {% endblock %}
