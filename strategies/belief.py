@@ -89,8 +89,10 @@ class PositionBelief:
         self.status: Dict[Combo, str] = {c: UNKNOWN for c in self.domain}
         self.out: Set[Combo] = set()
         self.in_: Set[Combo] = set()
-        #: 由 CORRECT 观测到的下界重数（互异规则下即“已安置”）
+        #: 由 CORRECT 观测到的“已落位副本数”：按**位置**去重，
+        #: 同一位置在后续轮次重复命中不会重复计数（否则会得出负的剩余副本数）。
         self.count_lower: Dict[Combo, int] = {c: 0 for c in self.domain}
+        self._correct_positions: Dict[Combo, Set[int]] = {}
         self._mask_cache: Dict[int, int] = {}
 
     # ------------------------------------------------------------ 查询
@@ -136,7 +138,8 @@ class PositionBelief:
             if f == CORRECT:
                 self.sets[i] = {g}
                 self._mark_in(g)
-                self.count_lower[g] = self.count_lower.get(g, 0) + 1
+                self._correct_positions.setdefault(g, set()).add(i)
+                self.count_lower[g] = len(self._correct_positions[g])
             elif f == MISPLACED:
                 self.sets[i].discard(g)
                 self._mark_in(g)

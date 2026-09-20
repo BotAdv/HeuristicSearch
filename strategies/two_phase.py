@@ -22,7 +22,7 @@ from typing import Dict, List, Optional, Sequence
 
 from core.game import CANDIDATES, SECRET_DISTINCT, SEQ_LEN, Combo, constant_sequence
 from strategies.base import History, ParamSpec, Strategy
-from strategies.belief import IN, UNKNOWN, PositionBelief, SupportTracker
+from strategies.belief import IN, OUT, UNKNOWN, PositionBelief, SupportTracker
 
 
 class TwoPhaseStrategy(Strategy):
@@ -81,6 +81,12 @@ class TwoPhaseStrategy(Strategy):
         self.used: Dict[Combo, int] = {c: 0 for c in CANDIDATES}
         self._pending_probe: List[Optional[Combo]] = []
         self.phase_a_rounds = 0
+        #: 设为 True 后，每轮会在 ``last_decision`` 里留下本轮每个位置的决策依据。
+        #: 仅用于复盘/分析（只读状态，不影响任何选择）。
+        self.explain = False
+        self.last_decision: Optional[Dict[str, object]] = None
+        self._explain_reasons: List[Optional[str]] = []
+        self._explain_extra: Dict[str, object] = {}
 
     def observe(self, guess: Sequence[Combo], feedback: Sequence[str]) -> None:
         self.belief.observe(guess, feedback)
@@ -99,6 +105,8 @@ class TwoPhaseStrategy(Strategy):
         self._sync(history)
         if self.phase == "A" and self._phase_a_done():
             self._enter_phase_b()
+        if self.explain:
+            self._explain_reset()
         if self.phase == "A":
             self.phase_a_rounds += 1
             guess = self._guess_phase_a()
@@ -106,7 +114,45 @@ class TwoPhaseStrategy(Strategy):
             guess = self._guess_phase_b()
         for c in guess:
             self.used[c] = self.used.get(c, 0) + 1
+        if self.explain:
+            self._explain_finish(guess, history)
         return guess
+
+    # ------------------------------------------------------------------ 解释钩子
+    def _explain_reset(self) -> None:
+        self._explain_reasons = [None] * SEQ_LEN
+        self._explain_extra = {}
+
+    def _explain_finish(self, guess: List[Combo], history: History) -> None:
+        in_list = [c for c in CANDIDATES if self.support.status.get(c) == IN]
+        out_list = [c for c in CANDIDATES if self.support.status.get(c) == OUT]
+        unknown = [c for c in CANDIDATES if self.support.status.get(c) == UNKNOWN]
+        candidates = []
+        for i in range(SEQ_LEN):
+            ci = sorted(self.belief.sets[i])
+            candidates.append(
+                {
+                    "position": i + 1,
+                    "size": len(ci),
+                    "chosen": guess[i] if i < len(guess) else None,
+                    "reason": self._explain_reasons[i] if i < len(self._explain_reasons) else None,
+                    "topCandidates": ci[:6],
+                }
+            )
+        self.last_decision = {
+            "round": len(history) + 1,
+            "phase": self.phase,
+            "phaseARounds": self.phase_a_rounds,
+            "support": {
+                "inList": in_list,
+                "inCount": len(in_list),
+                "outCount": len(out_list),
+                "unknownCount": len(unknown),
+                "counts": {c: self.support.count.get(c) for c in in_list},
+            },
+            "candidates": candidates,
+            **self._explain_extra,
+        }
 
     # ------------------------------------------------------------------ 阶段 A
     def _phase_a_done(self) -> bool:
@@ -153,6 +199,19 @@ class TwoPhaseStrategy(Strategy):
             ranked = list(unknown)
         chosen = ranked[:SEQ_LEN]
         self._pending_probe.append(None)
+        if self.explain:
+            self._explain_extra["batch"] = {
+                "chosen": list(chosen),
+                "unknownTotal": len(unknown),
+                "rankedTop": [
+                    {
+                        "combo": c,
+                        "coverage": sum(1 for i in range(SEQ_LEN) if c in self.belief.sets[i]),
+                        "used": self.used.get(c, 0),
+                    }
+                    for c in ranked[:SEQ_LEN]
+                ],
+            }
         return self._assemble_batch(chosen)
 
     def _assemble_batch(self, chosen: List[Combo]) -> List[Combo]:
@@ -164,6 +223,10 @@ class TwoPhaseStrategy(Strategy):
             for i in range(SEQ_LEN):
                 if len(self.belief.sets[i]) == 1:
                     guess[i] = next(iter(self.belief.sets[i]))
+                    if self._explain_reasons:
+                        self._explain_reasons[i] = (
+                            f"已锁定：本位置候选集只剩 {guess[i]} 这一个，继续沿用（白拿一个 CORRECT）"
+                        )
         placed = {c for c in guess if c is not None}
         # 1) 待分类批次优先分配给“还没锁定、且候选集合允许该组合”的位置
         avail = [c for c in chosen if c not in placed]
@@ -174,11 +237,22 @@ class TwoPhaseStrategy(Strategy):
         for i in order:
             if not avail:
                 break
-            pick = next((k for k, c in enumerate(avail) if c in self.belief.sets[i]), 0)
-            guess[i] = avail.pop(pick)
+            hit = next((k for k, c in enumerate(avail) if c in self.belief.sets[i]), None)
+            k = 0 if hit is None else hit
+            guess[i] = avail.pop(k)
+            if self._explain_reasons:
+                self._explain_reasons[i] = (
+                    f"批次分类：{guess[i]} 还没判定过是否属于支持集，且它仍在本位置候选集内"
+                    if hit is not None
+                    else f"批次分类：本位置候选集内已无剩余批次组合，改派批次里的 {guess[i]}"
+                )
         for i in range(SEQ_LEN):
             if guess[i] is None:
                 guess[i] = self._pad_value(i, avoid=[c for c in guess if c is not None])
+                if self._explain_reasons:
+                    self._explain_reasons[i] = (
+                        f"填位：本轮待分类批次不到 10 个，从本位置候选集里取最少用过的 {guess[i]}"
+                    )
         # 防止退化为常数序列（会被误解析为重数探针）
         if len(set(guess)) == 1:
             only = guess[0]
@@ -186,6 +260,8 @@ class TwoPhaseStrategy(Strategy):
                 alt = [c for c in sorted(self.belief.sets[i]) if c != only]
                 if alt:
                     guess[i] = self.rng.choice(alt)
+                    if self._explain_reasons:
+                        self._explain_reasons[i] = "防退化：避免整轮同一个组合，改成等价的替代探测"
                     break
             else:
                 alts = [c for c in CANDIDATES if c != only]
@@ -244,6 +320,10 @@ class TwoPhaseStrategy(Strategy):
             if len(self.belief.sets[i]) == 1:
                 guess[i] = next(iter(self.belief.sets[i]))
                 used_in_round.add(guess[i])
+                if self._explain_reasons:
+                    self._explain_reasons[i] = (
+                        f"已锁定：本位置候选集只剩 {guess[i]} 这一个，直接沿用"
+                    )
         order = sorted(
             (i for i in range(SEQ_LEN) if guess[i] is None),
             key=lambda i: (len(self.belief.sets[i]), i),
@@ -262,10 +342,39 @@ class TwoPhaseStrategy(Strategy):
                 tied = [c for c in with_budget if budget.get(c, 0) == best]
                 pick = min(tied, key=lambda c: (self.used.get(c, 0), self.rng.random()))
                 budget[pick] = budget.get(pick, 0) - 1
+                if self._explain_reasons:
+                    self._explain_reasons[i] = (
+                        f"指派：{pick} 已在支持集内且还有副本未安置，"
+                        f"本位置候选集 {len(self.belief.sets[i])} 个里优先安置它"
+                    )
             else:
                 pick = min(pool, key=lambda c: (self.used.get(c, 0), self.rng.random()))
+                if self._explain_reasons:
+                    # 区分两种退化原因：候选集里还有余量的组合被本轮其它位置先用掉了，
+                    # 还是本位置候选集里根本不存在“尚有未安置副本”的组合。
+                    occupied = [
+                        c
+                        for c in sorted(self.belief.sets[i])
+                        if c in used_in_round and budget.get(c, 0) > 0
+                    ]
+                    if occupied:
+                        self._explain_reasons[i] = (
+                            f"退化：候选集里还有余量的 {'、'.join(str(c) for c in occupied)} 本轮已用于其它位置，"
+                            f"只能重复取最少用过的 {pick}"
+                        )
+                    else:
+                        self._explain_reasons[i] = (
+                            "退化：候选集内已无“尚有未安置副本”的组合，"
+                            f"只能取候选集里最少用过的 {pick}"
+                        )
             guess[i] = pick
             used_in_round.add(pick)
+        if self.explain:
+            self._explain_extra["budget"] = {
+                "remainingBefore": {str(c): remaining.get(c, 0) for c in self.support.known_values()},
+                "remainingOfSupport": {str(c): budget.get(c, 0) for c in self.support.known_values()},
+                "usedInRound": [str(c) for c in used_in_round],
+            }
         return [c for c in guess if c is not None]
 
     # ------------------------------------------------------------------ 诊断
