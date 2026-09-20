@@ -138,13 +138,31 @@ button.small { padding: 4px 9px; font-size: 12px; }
 .cg-btn:hover:not(:disabled) { border-color: var(--accent); background: #202838; }
 /* 自组合（对角线）与普通格稍微区分，但仍可点选 */
 .cg-diag .cg-btn { background: #1a2130; }
-/* 被规则删除的 10 个组合：表中 20 格，灰色且不可选 */
-.cg-removed .cg-btn {
-  color: #5a6373; background: #14171d; border-style: dashed; cursor: not-allowed;
+/* 被规则删除的 10 个组合（a<b）与被并入对称格的下三角（a>b，cg-off）：
+   需求要求两者外观完全一致，所以共用同一条规则（不额外调透明度）。 */
+.cg-gone .cg-btn,
+.cg-removed .cg-btn,
+.cg-off .cg-btn {
+  color: #4d5462; background: #14171d; border-style: dashed; cursor: not-allowed;
   text-decoration: line-through;
 }
-/* 本轮猜测里用到的组合：高亮一个描边（不影响颜色标记） */
-.cg-picked .cg-btn { outline: 2px solid var(--accent); outline-offset: -2px; }
+/* 本轮选中的组合：不画框线，而是把该格自己的状态色高亮 + 闪烁 */
+.cg-cell.cg-picked .cg-btn {
+  animation: cg-blink 1.1s ease-in-out infinite;
+  font-weight: 700;
+}
+.cg-cell.cg-picked.mark-correct .cg-btn { box-shadow: 0 0 0 2px var(--c), 0 0 10px 2px rgba(46, 204, 113, .75); }
+.cg-cell.cg-picked.mark-misplaced .cg-btn { box-shadow: 0 0 0 2px var(--m), 0 0 10px 2px rgba(77, 159, 255, .75); }
+.cg-cell.cg-picked.mark-partial .cg-btn { box-shadow: 0 0 0 2px var(--p), 0 0 10px 2px rgba(160, 107, 255, .75); }
+.cg-cell.cg-picked.mark-wrong .cg-btn { box-shadow: 0 0 0 2px var(--w), 0 0 10px 2px rgba(255, 92, 92, .75); }
+.cg-cell.cg-picked:not([class*="mark-"]) .cg-btn {
+  color: #fff; background: #2b3550;
+  box-shadow: 0 0 0 2px var(--accent), 0 0 10px 2px rgba(91, 140, 255, .6);
+}
+@keyframes cg-blink {
+  0%, 100% { filter: brightness(1); }
+  50% { filter: brightness(1.85); }
+}
 /* 反馈状态标记：颜色只是备忘，不影响点选交互 */
 .cg-cell.mark-correct .cg-btn { color: #b6f2cd; border-color: var(--c); background: #16301f; font-weight: 700; }
 .cg-cell.mark-misplaced .cg-btn { color: #cfe2ff; border-color: var(--m); background: #10253c; font-weight: 700; }
@@ -159,6 +177,44 @@ button.small { padding: 4px 9px; font-size: 12px; }
 
 /* ---------------------------------------------------------------- 槽位 */
 .slots { display: grid; gap: 6px; grid-template-columns: repeat(5, 1fr); margin-bottom: 10px; }
+/* 猜测序列：1 行 10 列（与对局历史的每一行同构） */
+.slots.slots-row { grid-template-columns: repeat(10, minmax(0, 1fr)); gap: 4px; }
+.slots.slots-row .slot { min-height: 40px; font-size: 11px; }
+.slots.slots-row .slot .idx { font-size: 9px; }
+
+/* 历史序列卡片：上半 = 对局历史，下半 = 猜测序列；右上角是操作按钮 */
+.seq-card > header {
+  flex-direction: row; align-items: flex-start; justify-content: space-between;
+  gap: 12px; flex-wrap: wrap;
+}
+.seq-card .seq-head { display: flex; flex-direction: column; gap: 4px; }
+.card-actions { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.card-actions button { padding: 5px 10px; font-size: 12px; }
+.seq-block { margin-top: 8px; }
+.seq-title {
+  font-size: 11px; color: var(--muted); letter-spacing: .04em;
+  border-bottom: 1px dashed var(--border); padding-bottom: 4px; margin-bottom: 6px;
+}
+.seq-title .sub-note { margin-left: 8px; color: #6d788a; }
+.seq-history .history { max-height: 30vh; }
+.seq-guess .slots { margin-bottom: 8px; }
+/* 选定的填入位置 */
+.slot.selected {
+  border-style: solid; border-color: var(--accent); background: #1b2436;
+  box-shadow: 0 0 0 2px rgba(91, 140, 255, .45);
+}
+.slot.selected .idx { color: var(--accent); font-weight: 700; }
+.slot.locked.selected { box-shadow: 0 0 0 2px rgba(46, 204, 113, .45); }
+
+/* “让策略预测”的解释面板：手动改动猜测序列后标记为已过期 */
+.panel.stale > header .hint { color: #ffb86b; }
+.panel.stale .dec-box { opacity: .72; }
+
+/* 被收起的参数栏 */
+.bar-hint {
+  display: flex; align-items: center; gap: 10px; padding: 8px 20px 0; flex-wrap: wrap;
+}
+.bar-hint .muted { font-size: 11.5px; }
 .slot {
   border: 1px dashed var(--border); border-radius: 8px; min-height: 46px;
   display: grid; place-items: center; cursor: pointer; background: #12161e;

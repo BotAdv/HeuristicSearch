@@ -33,7 +33,8 @@ python app.py                 # http://127.0.0.1:5000
 ## 常用命令
 
 ```powershell
-python -m unittest discover -s tests           # 61 个单元测试
+python -m unittest discover -s tests           # 112 个单元测试
+python tools/run_tests_quiet.py                # 同上，只输出摘要（失败给用例名）
 python experiments/benchmark.py --games 200     # 默认对比（5 个策略，规则内）
 python experiments/benchmark.py --all-presets   # 跑完全部预置实验（对应 4 个核心问题）
 python experiments/benchmark.py --plan "position_entropy:pick_mode=split;explore_floor=2,two_phase:count_policy=skip"

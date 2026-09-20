@@ -72,14 +72,18 @@ function overlayMarks(marks, guess, answers, label) {
 }
 
 /** 生成一个格子的提示文案 */
-function cellTooltip(a, b, combo, removed, mark, picked, locked) {
+function cellTooltip(a, b, combo, removed, mark, picked, locked, offTri) {
   const lines = [];
-  lines.push(removed
-    ? `(${combo[0]}, ${combo[1]}) 已被规则删除，不属于候选集合 S`
-    : `(${combo[0]}, ${combo[1]})`);
-  if (a !== b) lines.push(`对称格 ${b}-${a} 与它等价，两格状态始终一致`);
+  if (offTri) {
+    lines.push(`(${combo[0]}, ${combo[1]})：本格是「a>b」的对称格，与 ${b}-${a} 等价，已置灰不可选`);
+    lines.push(`请用左上三角的 ${combo[0]}-${combo[1]} 选择该组合`);
+  } else {
+    lines.push(removed
+      ? `(${combo[0]}, ${combo[1]}) 已被规则删除，不属于候选集合 S`
+      : `(${combo[0]}, ${combo[1]})`);
+  }
   if (locked) lines.push('🔒 已锁定：该组合已经在某个位置判定 CORRECT，不会再作为待选');
-  if (picked) lines.push('本轮猜测用到了它');
+  if (picked) lines.push('本轮猜测用到了它（高亮闪烁）');
   if (mark && mark.notes && mark.notes.length) {
     const notes = mark.notes.map(n =>
       n.pending
@@ -89,10 +93,13 @@ function cellTooltip(a, b, combo, removed, mark, picked, locked) {
     if (mark.notes.some(n => !n.pending)) {
       lines.push(`当前标记：${MARK_LETTER[mark.kind]}（${MARK_TEXT[mark.kind]}）`);
     }
-  } else if (!removed) {
+  } else if (!removed && !offTri) {
     lines.push('还没有反馈信息');
   }
-  if (!removed) lines.push('点击即把它填入下一个空槽');
+  if (!removed && !offTri) {
+    lines.push('左键：选中该组合（按顺序填入猜测序列）');
+    lines.push('右键：取消选择（从猜测序列里移除）');
+  }
   return lines.join('\n');
 }
 
@@ -103,9 +110,11 @@ function cellTooltip(a, b, combo, removed, mark, picked, locked) {
  *   objects   [1..10]
  *   removed   Set<"a-b"> 被规则删除的组合键
  *   marks     accumulateMarks() 的结果
- *   picked    Set<"a-b"> 本轮猜测用到的组合（描边高亮）
+ *   picked    Set<"a-b"> 本轮猜测用到的组合（高亮+闪烁，不画框线）
  *   locked    Set<"a-b"> 已锁定（该组合已在某个位置判定 CORRECT）
- *   onPick    (combo) => void
+ *   onPick    (combo) => void          左键：选中该组合
+ *   onCancel  (combo) => void          右键：取消选择（从猜测序列里移除）
+ *   diagonal  'upper'（默认，只保留 a<=b 的上三角，a>b 与删除组合同等对待）| 'all'（旧的全格可选）
  */
 function renderComboMatrix(host, opts) {
   if (!host) return;
@@ -115,6 +124,9 @@ function renderComboMatrix(host, opts) {
   const picked = opts.picked || new Set();
   const locked = opts.locked || new Set();
   const onPick = opts.onPick;
+  const onCancel = opts.onCancel;
+  // 默认只保留上三角（a<=b）：a>b 的半张表与“被删除的 10 个组合”一样置灰、不可点
+  const triangle = opts.triangle || 'upper';
 
   const table = document.createElement('table');
   table.className = 'cg-table' + (opts.compact ? ' cg-compact' : '');
@@ -144,28 +156,38 @@ function renderComboMatrix(host, opts) {
     objects.forEach(b => {
       const combo = canonicalCombo(a, b);
       const key = comboKey(combo);
-      const gone = removed.has(key);
+      const offTri = triangle === 'upper' && a > b;   // a>b：对称格已并入 a-b，本格不参与选择
+      const gone = removed.has(key) || offTri;
       const mark = marks[key];
-      const isPicked = picked.has(key);
-      const isLocked = locked.has(key);
+      const isPicked = picked.has(key) && !gone;
+      const isLocked = locked.has(key) && !gone;
 
       const td = document.createElement('td');
       td.className = 'cg-cell' + (a === b ? ' cg-diag' : '');
-      if (gone) td.classList.add('cg-removed');
+      if (offTri) td.classList.add('cg-off');
+      if (removed.has(key)) td.classList.add('cg-removed');
+      if (gone) td.classList.add('cg-gone');
       if (isPicked) td.classList.add('cg-picked');
       if (isLocked) td.classList.add('cg-locked');
-      if (mark && MARK_RANK[mark.kind]) td.classList.add('mark-' + FEEDBACK_CLASS[mark.kind]);
+      if (!gone && mark && MARK_RANK[mark.kind]) td.classList.add('mark-' + FEEDBACK_CLASS[mark.kind]);
 
       const btn = document.createElement('button');
       btn.type = 'button';
       btn.className = 'cg-btn';
       btn.textContent = cellLabel(a, b) + (isLocked ? ' 🔒' : '');
-      btn.title = cellTooltip(a, b, combo, gone, mark, isPicked, isLocked);
+      btn.title = cellTooltip(a, b, combo, gone, mark, isPicked, isLocked, offTri);
       if (gone) {
         btn.disabled = true;
         btn.setAttribute('aria-disabled', 'true');
-      } else if (onPick) {
-        btn.addEventListener('click', () => onPick(combo));
+      } else {
+        if (onPick) btn.addEventListener('click', () => onPick(combo));
+        if (onCancel) {
+          // 右键：取消选择（从猜测序列里把该组合移除）
+          btn.addEventListener('contextmenu', ev => {
+            ev.preventDefault();
+            onCancel(combo);
+          });
+        }
       }
       td.appendChild(btn);
       tr.appendChild(td);

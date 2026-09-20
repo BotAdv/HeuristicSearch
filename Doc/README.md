@@ -25,6 +25,7 @@
 | 13 | [13_多策略并排与策略接管.md](13_多策略并排与策略接管.md) | **多策略对比模式**（同一秘密并排跑）与**把历史交给策略预测下一步** | 想对比策略 / 想接手手动对局 |
 | 14 | [14_决策解释与逐步理由.md](14_决策解释与逐步理由.md) | **决策解释框架**：每个策略说自己“为什么这么选”，逐步猜测页逐轮可看 | 想了解策略逻辑 / 新增策略时 |
 | 15 | [15_子页签与位置锁定.md](15_子页签与位置锁定.md) | 沙盒的**三个子页签**、卡片相互独立、**CORRECT 位置锁定**、移除两个不使用反馈的策略 | 用沙盒 / 改界面时 |
+| 16 | [16_历史序列卡片与状态保持.md](16_历史序列卡片与状态保持.md) | **「历史序列」合并卡片**（上：对局历史／下：猜测序列）、卡片右上角四个按钮、**F9 参数栏**、矩阵**只留上三角**与右键取消、选中闪烁高亮、**刷新后状态保持** | 用沙盒 / 改前端时 |
 | — | [CHANGELOG.md](CHANGELOG.md) | 变更记录 | 看改动历史 |
 | — | `_data/events.jsonl` | 机器可读事件流（对局/模拟/交互） | 二次分析 |
 
@@ -37,7 +38,8 @@ python app.py                     # http://127.0.0.1:5000
 ```
 
 ```powershell
-python -m unittest discover -s tests            # 100 个单元测试
+python -m unittest discover -s tests            # 112 个单元测试
+python tools/run_tests_quiet.py                 # 同上，只输出摘要（失败给用例名）
 python experiments/benchmark.py --games 200     # 命令行基准实验（规则内）
 python experiments/benchmark.py --all-presets   # 跑完全部预置实验
 python experiments/analyze_game.py <gameId>     # 复盘某局：回放校验 + 每轮选择依据

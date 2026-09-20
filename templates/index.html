@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% block content %}
-{# 三个模式各自一个子页签：每个页签都有**自己的控制栏与卡片**，控制按钮永远和内容同屏 #}
+{# 三个模式各自一个子页签：每个页签有自己的控制栏与卡片，控制按钮与内容永远同屏 #}
 <nav class="subtabs" id="subtabs" role="tablist">
   <button type="button" class="subtab active" data-tab="manual" role="tab">
     ① 手动试玩<span class="sub-note">自己选组合，可交给策略接管</span>
@@ -15,7 +15,11 @@
 
 <!-- ============================ ① 手动试玩 ============================ -->
 <section class="tabpane" data-pane="manual">
-  <div class="toolbar">
+  <div class="bar-hint">
+    <span class="muted">参数与开关已收起（种子 / 轮次上限 / 显示秘密 / 交给哪个策略）</span>
+    <button type="button" class="small" data-role="toggleBar">显示参数栏（F9）</button>
+  </div>
+  <div class="toolbar" data-role="toolbar" hidden>
     <div class="group">
       <label for="manual-seed">秘密种子</label>
       <input id="manual-seed" type="number" placeholder="留空随机" min="0">
@@ -28,24 +32,24 @@
       <label><input type="checkbox" id="manual-reveal"> 显示秘密</label>
     </div>
     <div class="group">
-      <label for="manual-adviseStrategy">把当前历史交给策略</label>
+      <label for="manual-adviseStrategy">「让策略预测」使用的策略</label>
       <div class="row">
         <select id="manual-adviseStrategy"></select>
         <span id="manual-adviseParams" class="params-inline"></span>
-        <button id="manual-btnAdvise">让策略预测下一步</button>
       </div>
     </div>
-    <button id="manual-btnNew" class="primary">开新局</button>
-    <button id="manual-btnStep">提交猜测</button>
-    <button id="manual-btnClear">清空未锁定槽位</button>
   </div>
-  <div id="manual-status" class="status">点「开新局」开始：从候选矩阵里点组合填满 10 个槽位，然后提交。</div>
+  <div id="manual-status" class="status">点「历史序列」卡片右上角的「开新局」开始。</div>
   <main class="sandbox" data-role="cards"></main>
 </section>
 
 <!-- ============================ ② 策略自动 ============================ -->
 <section class="tabpane" data-pane="strategy" hidden>
-  <div class="toolbar">
+  <div class="bar-hint">
+    <span class="muted">参数与开关已收起（策略 / 种子 / 轮次上限 / 显示秘密）</span>
+    <button type="button" class="small" data-role="toggleBar">显示参数栏（F9）</button>
+  </div>
+  <div class="toolbar" data-role="toolbar">
     <div class="group">
       <label for="strategy-key">策略</label>
       <div class="row">
@@ -64,11 +68,8 @@
     <div class="group checkbox">
       <label><input type="checkbox" id="strategy-reveal"> 显示秘密</label>
     </div>
-    <button id="strategy-btnNew" class="primary">开新局</button>
-    <button id="strategy-btnStep">走一步</button>
-    <button id="strategy-btnPlay">自动跑完</button>
   </div>
-  <div id="strategy-status" class="status">点「开新局」开始：策略每走一步都会给出该步的逐位理由。</div>
+  <div id="strategy-status" class="status">点「历史序列」卡片右上角的「开新局」开始：策略每走一步都会给出逐位理由。</div>
   <main class="sandbox" data-role="cards"></main>
 </section>
 

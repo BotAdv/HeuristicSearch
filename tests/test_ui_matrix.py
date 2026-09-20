@@ -144,6 +144,103 @@ class TestMatrixWiring(unittest.TestCase):
             self.assertIn("accumulateMarks(", js, f"{name} 没有累积反馈标记")
 
 
+class TestMergedSeqCard(unittest.TestCase):
+    """需求 1：猜测序列 + 对局历史合并为「历史序列」卡片，操作按钮移到卡片右上角。"""
+
+    def setUp(self):
+        self.index = read(TEMPLATES / "index.html")
+        self.sandbox = read(STATIC / "js" / "sandbox.js")
+        self.css = read(STATIC / "css" / "app.css")
+
+    def test_card_structure_is_merged(self):
+        # 上半：对局历史；下半：猜测序列（两段都待在同一个 .seq-card 里）
+        self.assertIn("seq-card", self.sandbox)
+        self.assertIn('data-role="actions"', self.sandbox)
+        self.assertIn("seq-history", self.sandbox)
+        self.assertIn("seq-guess", self.sandbox)
+        self.assertIn("seq-history", self.index + self.css)
+        # 卡片里只该有一处槽位区（合并后不再有第二个“猜测序列”卡片）
+        self.assertEqual(self.sandbox.count('data-role="slots"'), 1,
+                         "单策略卡片模板里槽位区应只有一个（合并后不再分开）")
+        for cls in (".seq-card", ".card-actions", ".seq-block", ".seq-title", ".slots.slots-row"):
+            self.assertIn(cls, self.css, f"缺少 {cls} 样式")
+
+    def test_manual_card_has_four_buttons_including_new_game(self):
+        block = re.search(r"manual:\s*\[(.*?)\],\s*strategy:", self.sandbox, re.S)
+        self.assertIsNotNone(block, "找不到 ACTIONS.manual 定义")
+        body = block.group(1)
+        for label in ("开新局", "提交猜测", "让策略预测", "清空槽位"):
+            self.assertIn(label, body, f"手动模式卡片缺少按钮 {label}")
+        self.assertEqual(body.count("act:"), 4, "手动模式卡片应恰好 4 个按钮")
+
+    def test_strategy_card_has_three_buttons(self):
+        block = re.search(r"strategy:\s*\[(.*?)\],\s*\};", self.sandbox, re.S)
+        self.assertIsNotNone(block, "找不到 ACTIONS.strategy 定义")
+        body = block.group(1)
+        for label in ("开新局", "走一步", "自动跑完"):
+            self.assertIn(label, body, f"策略模式卡片缺少按钮 {label}")
+        self.assertEqual(body.count("act:"), 3)
+
+    def test_action_buttons_no_longer_live_in_toolbar(self):
+        """顶部导航栏里的其余选项（含动作按钮）都隐藏了，只留参数。"""
+        for dead in ("manual-btnStep", "manual-btnNew", "strategy-btnStep", "strategy-btnNew"):
+            self.assertNotIn(f'id="{dead}"', self.index,
+                             f"{dead} 应该由卡片生成，不该再写在模板的导航栏里")
+        # 参数栏里必须只剩参数控件
+        for pid in ("manual-seed", "manual-maxRounds", "manual-reveal", "manual-adviseStrategy",
+                    "strategy-key", "strategy-seed", "strategy-maxRounds", "strategy-reveal"):
+            self.assertIn(f'id="{pid}"', self.index, f"参数栏缺少 {pid}")
+
+    def test_manual_toolbar_hidden_by_default_with_f9_toggle(self):
+        manual_pane = self.index.split('data-pane="manual"')[1].split('data-pane="strategy"')[0]
+        self.assertRegex(manual_pane, r'data-role="toolbar"[^>]*hidden',
+                         "手动模式的参数栏默认必须收起")
+        self.assertEqual(self.index.count('data-role="toggleBar"'), 2,
+                         "两个单策略页签各需要一个「显示参数栏（F9）」按钮")
+        self.assertIn("'F9'", self.sandbox)
+        self.assertIn("applyBarVisibility", self.sandbox)
+        self.assertRegex(self.css, r"\.bar-hint\s*\{")
+
+
+class TestMatrixTriangleAndRightClick(unittest.TestCase):
+    """需求 2：矩阵只保留上三角可选；左键选中、右键取消；选中用状态色闪烁高亮。"""
+
+    def setUp(self):
+        self.js = read(STATIC / "js" / "combogrid.js")
+        self.css = read(STATIC / "css" / "app.css")
+        self.sandbox = read(STATIC / "js" / "sandbox.js")
+
+    def test_upper_triangle_support(self):
+        self.assertIn("triangle", self.js, "combogrid.js 需要支持 triangle 选项")
+        self.assertIn("'upper'", self.js)
+        self.assertIn("triangle: 'upper'", self.sandbox, "沙盒矩阵应开启上三角模式")
+        # 下三角（a>b）走与“被删除的 10 个组合”相同的置灰分支
+        self.assertIn("offTri", self.js)
+        for cls in (".cg-off", ".cg-gone", ".cg-removed"):
+            self.assertIn(cls, self.css, f"缺少 {cls} 样式")
+
+    def test_left_pick_and_right_cancel(self):
+        self.assertIn("onPick", self.js)
+        self.assertIn("onCancel", self.js)
+        self.assertIn("contextmenu", self.js, "右键取消需要监听 contextmenu")
+        self.assertIn("cancelCombo", self.sandbox)
+        self.assertIn("onSlotCancel", self.sandbox)
+        # 右键菜单要拦掉系统菜单
+        self.assertIn("preventDefault", self.js)
+
+    def test_pick_highlight_is_blink_not_blue_frame(self):
+        self.assertIn("@keyframes cg-blink", self.css)
+        self.assertRegex(self.css, r"\.cg-cell\.cg-picked\s+\.cg-btn\s*\{\s*animation",
+                         "本轮选中的格子应当闪烁，而不是画蓝色框线")
+        self.assertIn("cg-blink", self.css)
+        self.assertIn(".slot.selected", self.css)
+
+    def test_sequential_and_explicit_slot_fill(self):
+        for fn in ("firstFreeSlot", "onSlotClick", "place("):
+            self.assertIn(fn, self.sandbox, f"sandbox.js 缺少 {fn}")
+        self.assertIn("selectedSlot", self.sandbox)
+
+
 class TestFeedbackColors(unittest.TestCase):
     """配色映射：CORRECT 绿 / MISPLACED 蓝 / PARTIAL 紫 / WRONG 红。"""
 
@@ -172,6 +269,33 @@ class TestFeedbackColors(unittest.TestCase):
         base = read(TEMPLATES / "base.html")
         self.assertIn("fb-c", base)
         self.assertRegex(self.css, r"\.fb-c\s*\{\s*color:\s*var\(--c\)")
+
+
+class TestSandboxStatePersistence(unittest.TestCase):
+    """需求 3：刷新后沙盒数据不变（对局 id / 槽位 / 参数 / 策略清单都落 localStorage）。"""
+
+    def setUp(self):
+        self.sandbox = read(STATIC / "js" / "sandbox.js")
+
+    def test_store_key_and_lifecycle(self):
+        self.assertIn("hs.sandbox.v1", self.sandbox)
+        for fn in ("saveState", "loadState", "clearGameInStore", "snapshot", "snapshotUI",
+                   "restoreUI", "restore("):
+            self.assertIn(fn, self.sandbox, f"sandbox.js 缺少 {fn}")
+        self.assertIn("beforeunload", self.sandbox, "关页面前要再存一次")
+        self.assertIn("localStorage.setItem", self.sandbox)
+        self.assertIn("localStorage.getItem", self.sandbox)
+
+    def test_restore_is_graceful_when_session_expired(self):
+        """会话过期（服务重启）时要能降级：清掉失效的 id 并提示，而不是抛错。"""
+        self.assertIn("clearGameInStore(this.name)", self.sandbox)
+        self.assertIn("已失效", self.sandbox)
+
+    def test_all_three_panes_persist(self):
+        for name in ("manual", "strategy", "multi"):
+            self.assertIn(f"state.views.{name}", self.sandbox, f"{name} 视图未接入状态保持")
+        self.assertIn("plans", self.sandbox)
+        self.assertIn("state.toolbars", self.sandbox, "参数栏的展开状态也要记住")
 
 
 if __name__ == "__main__":
