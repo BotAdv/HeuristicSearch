@@ -33,6 +33,7 @@ _HEADER = """# 08 对局与模拟日志
 >
 > 记录内容：
 > - 沙盒中每一局对局（含**每一轮**的猜测序列与逐位反馈）
+> - **逐步猜测**模式的完整对局（秘密未知，反馈由人工录入，落盘时记录）
 > - 批量模拟运行的汇总指标
 >
 > 反馈字母含义：`C`=CORRECT，`M`=MISPLACED，`P`=PARTIAL，`W`=WRONG。
@@ -219,3 +220,83 @@ def record_simulation(plan: List[Dict[str, Any]], meta: Dict[str, Any], report: 
     lines.append(f"- 参数：`{json.dumps(plan, ensure_ascii=False)}`")
     append_markdown("批量模拟汇总", lines)
     _emit_jsonl("simulation", {"meta": meta, "plan": plan, "report": report})
+
+
+# --------------------------------------------------------------------------
+# 逐步猜测模式
+# --------------------------------------------------------------------------
+def archive_game(record: Dict[str, Any]) -> str:
+    """把一局对局落盘到 ``runtime/games/<gameId>.json``，返回文件路径。"""
+    config.ensure_dirs()
+    path = config.GAMES_DIR / f"{record['gameId']}.json"
+    path.write_text(json.dumps(record, ensure_ascii=False, indent=2), encoding="utf-8")
+    return str(path)
+
+
+def list_archived_games(limit: int = 50) -> List[Dict[str, Any]]:
+    """列出已落盘的对局（按修改时间倒序），只返回摘要字段。"""
+    config.ensure_dirs()
+    items: List[Dict[str, Any]] = []
+    files = sorted(config.GAMES_DIR.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True)
+    for path in files[:limit]:
+        try:
+            record = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        items.append(
+            {
+                "gameId": record.get("gameId", path.stem),
+                "mode": record.get("mode"),
+                "label": record.get("label"),
+                "strategy": record.get("strategy"),
+                "solved": record.get("solved"),
+                "rounds": record.get("rounds"),
+                "createdAt": record.get("createdAt"),
+                "finishedAt": record.get("finishedAt"),
+                "savedAt": path.stat().st_mtime,
+            }
+        )
+    return items
+
+
+def read_archived_game(game_id: str) -> Optional[Dict[str, Any]]:
+    path = config.GAMES_DIR / f"{game_id}.json"
+    if not path.exists():
+        return None
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+
+
+def record_human_game(record: Dict[str, Any], include_rounds: bool = True) -> None:
+    """记录一局落盘后的「逐步猜测」对局（秘密未知，反馈由人工录入）。"""
+    if not config.DOC_LOG_ENABLED:
+        return
+    support = record.get("support") or {}
+    lines: List[str] = [
+        f"- 时间：{_now()}",
+        "- 模式：**逐步猜测**（秘密未知，逐位反馈由人工录入）",
+        f"- 标签：{record.get('label') or '（无）'}",
+        f"- 策略：`{record.get('strategy')}`，参数 `{json.dumps(record.get('params') or {}, ensure_ascii=False)}`",
+        f"- 秘密满足互异规则：{'是' if record.get('assumeDistinct') else '否（规则外对照）'}",
+        f"- 结果：**{'全部 CORRECT，已解出' if record.get('solved') else '未解出（手动结束）'}**，"
+        f"共 {record.get('rounds')} 轮",
+        f"- 过程中推断出的支持集：属于 `{support.get('knownIn', 0)}` 个，"
+        f"不属于 `{support.get('knownOut', 0)}` 个，已定位 `{support.get('placed', 0)}` 个",
+    ]
+    if record.get("note"):
+        lines.append(f"- 备注：{record['note']}")
+    trace = record.get("trace") or []
+    if include_rounds and trace:
+        lines += ["", "| 轮次 | 猜测序列 | 反馈 | 一致性校验 |", "| --- | --- | --- | --- |"]
+        for item in trace[: config.DOC_LOG_ROUND_LIMIT]:
+            guess = " ".join(combo_str(tuple(c)) for c in item["guess"])
+            warn = "；".join(item.get("warnings") or []) or "通过"
+            lines.append(f"| {item['index']} | `{guess}` | `{item['letters']}` | {warn} |")
+        if len(trace) > config.DOC_LOG_ROUND_LIMIT:
+            lines.append(f"| … | 省略 {len(trace) - config.DOC_LOG_ROUND_LIMIT} 轮 | | |")
+    if record.get("savedPath"):
+        lines.append(f"- 落盘文件：`{record['savedPath']}`")
+    append_markdown(f"逐步猜测对局 · {record.get('label') or record.get('gameId')}", lines)
+    _emit_jsonl("human_game", record)

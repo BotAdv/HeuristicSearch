@@ -46,6 +46,7 @@ PRESETS = {
     ] + [{"key": "fixed_cycle"}], 200, 40, "distinct"),
     "two_phase_vs_hybrid": ([
         {"key": "two_phase", "params": {"count_policy": "auto_exact"}},
+        {"key": "two_phase", "params": {"count_policy": "auto_exact", "lock_known_positions": False}},
         {"key": "two_phase", "params": {"count_policy": "skip"}},
         {"key": "two_phase", "params": {"count_policy": "exact"}},
         {"key": "adaptive_hybrid", "params": {"explore_threshold": 1, "pick_mode": "split"}},

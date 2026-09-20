@@ -26,13 +26,14 @@ python app.py                 # http://127.0.0.1:5000
 | 路径 | 用途 |
 | --- | --- |
 | `/` | 沙盒：手动试玩 + 策略自动对局 + 逐轮反馈可视化 |
+| `/human` | **逐步猜测**：秘密未知，策略出招、你逐位录入反馈，直到全部 CORRECT 后落盘 |
 | `/strategies` | 策略库：查看/调参/一键试玩所有策略 |
 | `/lab` | 模拟实验台：批量模拟 → 指标表 + 图表 + CSV/JSON 导出 |
 
 ## 常用命令
 
 ```powershell
-python -m unittest discover -s tests           # 31 个单元测试
+python -m unittest discover -s tests           # 61 个单元测试
 python experiments/benchmark.py --games 200     # 默认对比（5 个策略，规则内）
 python experiments/benchmark.py --all-presets   # 跑完全部预置实验（对应 4 个核心问题）
 python experiments/benchmark.py --plan "position_entropy:pick_mode=split;explore_floor=2,two_phase:count_policy=skip"
@@ -46,12 +47,13 @@ python experiments/benchmark.py --secret-mode repeated --games 200   # 旧规则
 | `random` | 随机基线（不使用反馈） | 未解出 |
 | `fixed_cycle` | 固定循环（不使用反馈） | 未解出 |
 | `naive_position` | 朴素位置独立贪心 | 6.775 |
-| `two_phase` | 两阶段：先定支持集再定顺序 | **5.765** |
+| `two_phase` | 两阶段：先定支持集再定顺序 | **6.125** |
 | `position_entropy` | 逐位置信息增益贪心（`split` 探测 + 全局剪枝） | 6.260 |
 | `adaptive_hybrid` | 自适应混合（探测/定位交织） | 6.550 |
 | `particle_entropy` | 粒子滤波 + 全局最大熵 | 7.045 |
 
 ¹ 200 局 / 种子 20260920 / `--secret-mode distinct`（当前规则）。
+`two_phase` 把 `lock_known_positions` 关掉可到 **5.765 轮**。
 同一套代码在旧规则（`--secret-mode repeated`）下排名完全不同，完整数据与结论见
 `Doc/06_实验结论与复现指南.md`。
 
@@ -93,7 +95,7 @@ Doc/           项目文档（索引见 Doc/README.md）
 
 ## 一句话结论
 
-* **当前规则下，两阶段范式（先定支持集、再定顺序）是最优的**：平均 **5.765 轮**；
+* **当前规则下，两阶段范式（先定支持集、再定顺序）是最优的**：平均 **6.125 轮**（默认）／**5.765 轮**（关闭 `lock_known_positions`）；
   逐位置熵贪心 6.260、自适应混合 6.550、朴素贪心 6.775、粒子滤波 7.045。
 * 关键原因：互异规则直接给出“重数恒为 1”，使**常数序列探针彻底失去意义**，
   两阶段的分阶段成本降到最低；同时“已安置组合 ⇒ 全局删除”成为最强剪枝，

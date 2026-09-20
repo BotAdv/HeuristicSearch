@@ -18,6 +18,18 @@
 ``POST /api/jobs/<jid>/cancel``        取消任务
 ``GET  /api/jobs/<jid>/export``        导出结果（csv / json）
 ``GET  /api/runs``                     历史运行列表
+``GET  /api/runs/<rid>``               某次运行的完整报告
+
+逐步猜测（人工录入反馈，前缀 ``/api/human``）：
+``POST /api/human/games``              新建对局（默认立刻让策略给出首轮猜测）
+``GET  /api/human/games/<gid>``        查询状态（含 pendingGuess / roundWarnings / support）
+``POST /api/human/games/<gid>/next``   让策略给出本轮猜测
+``POST /api/human/games/<gid>/feedback`` 录入本轮逐位反馈（可开启严格校验）
+``POST /api/human/games/<gid>/undo``   撤销上一轮（并恢复该轮猜测为待反馈）
+``POST /api/human/games/<gid>/save``   落盘并记录到 runtime/games 与 Doc/
+``DELETE /api/human/games/<gid>``      删除会话
+``GET  /api/human/archive``            已落盘对局列表
+``GET  /api/human/archive/<gid>``      某局完整存档
 """
 from __future__ import annotations
 
@@ -47,7 +59,8 @@ from core.game import (
     validate_sequence,
     validate_secret,
 )
-from core.sequence_game import SequenceGame
+from core.feedback import feedback_to_letters, parse_feedback
+from core.sequence_game import HumanFeedbackGame, SequenceGame
 from engine import jobs as jobs_mod
 from engine import simulator
 from engine.simulator import SECRET_MODES
@@ -268,7 +281,7 @@ def api_presets():
                     "name": "问题 2：两阶段 vs 混合策略",
                     "plan": [
                         {"key": "two_phase", "params": {"count_policy": "auto_exact"}},
-                        {"key": "two_phase", "params": {"count_policy": "exact"}},
+                        {"key": "two_phase", "params": {"count_policy": "auto_exact", "lock_known_positions": False}},
                         {"key": "adaptive_hybrid", "params": {"explore_threshold": 1, "pick_mode": "split"}},
                         {"key": "position_entropy", "params": {"pick_mode": "split"}},
                         {"key": "particle_entropy", "params": {"objective": "expected_correct"}},
@@ -685,6 +698,235 @@ def api_run_detail(rid: str):
     if not path.exists():
         return jsonify({"error": "运行记录不存在"}), 404
     return jsonify(json.loads(path.read_text(encoding="utf-8")))
+
+
+# --------------------------------------------------------------------------
+# 逐步猜测模式（秘密未知，逐位反馈由玩家手工录入）
+# --------------------------------------------------------------------------
+_HUMAN: Dict[str, "HumanSession"] = {}
+_HUMAN_LOCK = threading.Lock()
+MAX_HUMAN_SESSIONS = 100
+
+
+class HumanSession:
+    """一个「逐步猜测」会话：人工反馈的对局 + 出招的策略实例。"""
+
+    def __init__(
+        self,
+        game: HumanFeedbackGame,
+        strategy_key: str,
+        params: Dict[str, Any],
+        strategy_seed: Optional[int] = None,
+        strict: bool = False,
+        auto_save: bool = True,
+    ) -> None:
+        self.game = game
+        self.strategy_key = strategy_key
+        self.params = params
+        self.strict = strict
+        self.auto_save = auto_save
+        self.saved = False
+        self.record: Optional[Dict[str, Any]] = None
+        self.strategy = create(strategy_key, seed=strategy_seed, **params)
+        self.strategy_name = get_strategy_class(strategy_key).name
+
+    # ------------------------------------------------------------------ 操作
+    def issue_guess(self) -> List[List[int]]:
+        guess = self.strategy.next_guess(self.game.history)
+        return serialize_sequence(self.game.set_pending(guess))
+
+    def submit(self, feedback: List[str]) -> List[str]:
+        warnings = self.game.submit_feedback(feedback)
+        if self.strict and warnings:
+            # 严格模式：退回这一轮，并保留同一个猜测继续等待反馈（不污染历史）
+            self.game.reject_last_round()
+            raise ValueError("反馈与已有记录矛盾（严格模式已拒绝）：" + "；".join(warnings))
+        if self.game.solved and self.auto_save:
+            self.save()
+        return warnings
+
+    def save(self) -> Dict[str, Any]:
+        self.record = self.game.record(strategy_key=self.strategy_key, params=self.params)
+        path = journal.archive_game(self.record)
+        self.record["savedPath"] = path
+        self.game.saved_path = path
+        journal.record_human_game(self.record)
+        self.saved = True
+        return self.record
+
+    def rollback_save(self) -> None:
+        self.saved = False
+        self.record = None
+
+    def payload(self) -> Dict[str, Any]:
+        data = self.game.state()
+        data.update(
+            {
+                "strategy": self.strategy_key,
+                "strategyName": self.strategy_name,
+                "params": self.params,
+                "strict": self.strict,
+                "autoSave": self.auto_save,
+                "saved": self.saved,
+                "canUndo": bool(self.game.history) or self.game.pending_guess is not None,
+            }
+        )
+        return data
+
+
+def _get_human(gid: str) -> HumanSession:
+    session = _HUMAN.get(gid)
+    if session is None:
+        raise KeyError(f"逐步猜测对局 {gid} 不存在（可能已被清理，请重新开始）")
+    return session
+
+
+def _gc_human() -> None:
+    if len(_HUMAN) <= MAX_HUMAN_SESSIONS:
+        return
+    ordered = sorted(_HUMAN.items(), key=lambda kv: kv[1].game.created)
+    for key, _ in ordered[: len(_HUMAN) - MAX_HUMAN_SESSIONS]:
+        _HUMAN.pop(key, None)
+
+
+@api.post("/human/games")
+def api_human_create():
+    payload = request.get_json(silent=True) or {}
+    key = payload.get("strategy")
+    try:
+        get_strategy_class(key)
+    except KeyError as exc:
+        return jsonify({"error": str(exc)}), 400
+    params = dict(payload.get("params") or {})
+    assume_distinct = payload.get("assumeDistinct")
+    seed = payload.get("strategySeed")
+    seed = int(seed) if seed not in (None, "") else None
+    game = HumanFeedbackGame(
+        assume_distinct=None if assume_distinct is None else bool(assume_distinct),
+        label=str(payload.get("label") or ""),
+        note=str(payload.get("note") or ""),
+    )
+    session = HumanSession(
+        game,
+        key,
+        params,
+        strategy_seed=seed,
+        strict=bool(payload.get("strict")),
+        auto_save=payload.get("autoSave", True) is not False,
+    )
+    with _HUMAN_LOCK:
+        _HUMAN[game.game_id] = session
+        _gc_human()
+    if payload.get("autoStart", True):
+        try:
+            session.issue_guess()
+        except Exception as exc:  # noqa: BLE001 - 策略异常不应导致会话创建失败
+            return jsonify({"error": f"策略首轮出招失败：{type(exc).__name__}: {exc}"}), 500
+    return jsonify(session.payload())
+
+
+@api.get("/human/games/<gid>")
+def api_human_get(gid: str):
+    try:
+        session = _get_human(gid)
+    except KeyError as exc:
+        return jsonify({"error": str(exc)}), 404
+    return jsonify(session.payload())
+
+
+@api.post("/human/games/<gid>/next")
+def api_human_next(gid: str):
+    try:
+        session = _get_human(gid)
+    except KeyError as exc:
+        return jsonify({"error": str(exc)}), 404
+    if session.game.solved:
+        return jsonify({"error": "本局已全部 CORRECT，无需再猜"}), 400
+    if session.game.pending_guess is not None:
+        return jsonify({"error": "上一轮猜测还在等待你录入反馈"}), 400
+    try:
+        session.issue_guess()
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({"error": f"策略出招失败：{type(exc).__name__}: {exc}"}), 500
+    return jsonify(session.payload())
+
+
+@api.post("/human/games/<gid>/feedback")
+def api_human_feedback(gid: str):
+    try:
+        session = _get_human(gid)
+    except KeyError as exc:
+        return jsonify({"error": str(exc)}), 404
+    payload = request.get_json(silent=True) or {}
+    try:
+        feedback = parse_feedback(payload.get("feedback", payload.get("letters")), SEQ_LEN)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    try:
+        warnings = session.submit(feedback)
+    except (ValueError, RuntimeError) as exc:
+        return jsonify({"error": str(exc)}), 400
+    state = session.payload()
+    round_info = state["history"][-1] if state["history"] else None
+    return jsonify(
+        {
+            "accepted": True,
+            "warnings": warnings,
+            "consistent": not warnings,
+            "feedback": list(feedback),
+            "letters": feedback_to_letters(feedback),
+            "round": round_info,
+            "state": state,
+            "record": session.record if session.saved else None,
+        }
+    )
+
+
+@api.post("/human/games/<gid>/undo")
+def api_human_undo(gid: str):
+    try:
+        session = _get_human(gid)
+    except KeyError as exc:
+        return jsonify({"error": str(exc)}), 404
+    undone = session.game.undo()
+    session.rollback_save()
+    return jsonify({"undone": undone, "state": session.payload()})
+
+
+@api.post("/human/games/<gid>/save")
+def api_human_save(gid: str):
+    try:
+        session = _get_human(gid)
+    except KeyError as exc:
+        return jsonify({"error": str(exc)}), 404
+    if not session.game.history:
+        return jsonify({"error": "还没有任何已完成的轮次，无需落盘"}), 400
+    if session.game.pending_guess is not None:
+        return jsonify({"error": "当前猜测还没有录入反馈，请先提交或撤销后再落盘"}), 400
+    record = session.save()
+    return jsonify({"saved": True, "path": record.get("savedPath"), "record": record,
+                    "state": session.payload()})
+
+
+@api.delete("/human/games/<gid>")
+def api_human_delete(gid: str):
+    with _HUMAN_LOCK:
+        removed = _HUMAN.pop(gid, None)
+    return jsonify({"removed": bool(removed)})
+
+
+@api.get("/human/archive")
+def api_human_archive():
+    return jsonify({"games": journal.list_archived_games(limit=_int_field(
+        request.args.to_dict(), "limit", 50, 1, 500))})
+
+
+@api.get("/human/archive/<gid>")
+def api_human_archive_detail(gid: str):
+    record = journal.read_archived_game(gid)
+    if record is None:
+        return jsonify({"error": "找不到该对局存档"}), 404
+    return jsonify(record)
 
 
 @api.get("/health")

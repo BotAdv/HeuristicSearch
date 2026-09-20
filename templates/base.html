@@ -17,6 +17,7 @@
     </div>
     <nav class="nav">
       <a href="{{ url_for('pages.index') }}" class="{{ 'active' if page == 'sandbox' else '' }}">沙盒</a>
+      <a href="{{ url_for('pages.human_page') }}" class="{{ 'active' if page == 'human' else '' }}">逐步猜测</a>
       <a href="{{ url_for('pages.strategies_page') }}" class="{{ 'active' if page == 'strategies' else '' }}">策略库</a>
       <a href="{{ url_for('pages.lab_page') }}" class="{{ 'active' if page == 'lab' else '' }}">模拟实验台</a>
       <a href="/api/meta" target="_blank" rel="noopener">API</a>

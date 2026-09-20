@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="toolbar">
+  <div class="group">
+    <label for="strategy">策略</label>
+    <div class="row">
+      <select id="strategy"></select>
+      <span id="strategyParams" class="params-inline"></span>
+    </div>
+  </div>
+  <div class="group">
+    <label for="label">对局标签</label>
+    <input id="label" type="text" placeholder="例如：朋友出的题 01" style="min-width:150px">
+  </div>
+  <div class="group checkbox">
+    <label title="反馈与已有记录矛盾时直接拒绝提交，保证数据质量">
+      <input type="checkbox" id="strict"> 严格校验</label>
+  </div>
+  <div class="group checkbox">
+    <label title="全部位置标为 CORRECT 时自动落盘并记录到 Doc/">
+      <input type="checkbox" id="autoSave" checked> 自动落盘</label>
+  </div>
+  <div class="group checkbox">
+    <label title="声明这个秘密满足当前规则（组合互异）。若别人给的秘密本身有重复组合，取消勾选">
+      <input type="checkbox" id="assumeDistinct" checked> 秘密组合互异</label>
+  </div>
+  <button id="btnNew" class="primary">开始新对局</button>
+  <button id="btnUndo" disabled>撤销上一轮</button>
+  <button id="btnSave" disabled>落盘并记录</button>
+</div>
+
+<div id="status" class="status">选好策略后点击「开始新对局」：策略会先给出首轮猜测，你只需照实录入逐位反馈。</div>
+<div id="banner" class="banner" hidden></div>
+
+<main class="human">
+  <section class="panel">
+    <header>
+      <h2>本轮猜测 <span class="badge" id="roundBadge">—</span></h2>
+      <p class="hint">给每个位置选一个反馈：<b class="fb-c">C</b> 完全正确 ·
+        <b class="fb-m">M</b> 正确但位置错误 · <b class="fb-p">P</b> 部分正确 · <b class="fb-w">W</b> 完全错误</p>
+      <div class="group">
+        <label for="quick">快速录入（10 个字母，可直接粘贴）</label>
+        <input id="quick" type="text" maxlength="24" placeholder="例如 CMPWCMPWCM"
+               style="font-family:Consolas,monospace;letter-spacing:.18em;min-width:230px">
+      </div>
+    </header>
+    <div id="guessGrid" class="fggrid"></div>
+    <div class="row">
+      <button id="btnAllC">全部标为 CORRECT</button>
+      <button id="btnClear">清空</button>
+      <button id="btnSubmit" class="primary" disabled>提交反馈</button>
+      <span id="answerHint" class="muted"></span>
+    </div>
+  </section>
+
+  <section class="panel wide">
+    <header>
+      <h2>对局历史 <span class="badge" id="histBadge">0 轮</span></h2>
+      <p class="hint" id="histHint">每一轮由策略出招、你录入反馈。</p>
+    </header>
+    <div id="history" class="history"></div>
+  </section>
+
+  <section class="panel">
+    <header>
+      <h2>已落盘对局</h2>
+      <button id="btnRefreshArchive" class="small">刷新</button>
+    </header>
+    <div class="table-wrap"><table id="archiveTable"></table></div>
+  </section>
+</main>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/human.js') }}"></script>
+{% endblock %}

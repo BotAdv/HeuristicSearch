@@ -58,6 +58,9 @@ class TwoPhaseStrategy(Strategy):
         ParamSpec("assume_distinct", "假定秘密组合互异", default=SECRET_DISTINCT, type="bool",
                   help="当前规则下应为 True（重数恒为 1，无需常数探针）；"
                        "仅在用规则外秘密做对照实验时关闭。"),
+        ParamSpec("lock_known_positions", "已锁定位置沿用原值", default=True, type="bool",
+                  help="True：阶段 A 把已经确定的位置继续填它的唯一候选（更直观，人工逐步猜测模式更友好）；"
+                       "False：把这些位置也拿来试探新组合，每轮能多分类几个组合（沙盒里略快）。"),
     )
     max_rounds_hint = 40
 
@@ -154,8 +157,20 @@ class TwoPhaseStrategy(Strategy):
 
     def _assemble_batch(self, chosen: List[Combo]) -> List[Combo]:
         guess: List[Optional[Combo]] = [None] * SEQ_LEN
-        avail = list(chosen)
-        order = sorted(range(SEQ_LEN), key=lambda i: (len(self.belief.sets[i]), i))
+        keep_locked = bool(self.params["lock_known_positions"])
+        # 0) 已经锁定的位置：默认继续沿用它唯一的候选（白拿一个 CORRECT、也更直观）；
+        #    关闭后这些位置也参与试探，每轮能多分类几个组合（实测沙盒里略快）。
+        if keep_locked:
+            for i in range(SEQ_LEN):
+                if len(self.belief.sets[i]) == 1:
+                    guess[i] = next(iter(self.belief.sets[i]))
+        placed = {c for c in guess if c is not None}
+        # 1) 待分类批次优先分配给“还没锁定、且候选集合允许该组合”的位置
+        avail = [c for c in chosen if c not in placed]
+        order = sorted(
+            (i for i in range(SEQ_LEN) if guess[i] is None),
+            key=lambda i: (len(self.belief.sets[i]), i),
+        )
         for i in order:
             if not avail:
                 break

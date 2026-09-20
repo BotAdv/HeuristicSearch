@@ -20,3 +20,8 @@ def strategies_page():
 @pages.get("/lab")
 def lab_page():
     return render_template("lab.html", page="lab", title="模拟实验台")
+
+
+@pages.get("/human")
+def human_page():
+    return render_template("human.html", page="human", title="逐步猜测")
