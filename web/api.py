@@ -428,7 +428,7 @@ def api_presets():
                 {
                     "id": "greedy_vs_adaptive",
                     "name": "问题 1：不同启发式策略的期望步数差异",
-                    "plan": [{"key": k} for k in DEFAULT_PLAN_KEYS] + [{"key": "fixed_cycle"}],
+                    "plan": [{"key": k} for k in DEFAULT_PLAN_KEYS],
                     "games": 200,
                     "maxRounds": 40,
                     "secretMode": "distinct",

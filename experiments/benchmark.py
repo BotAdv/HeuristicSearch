@@ -43,7 +43,7 @@ PRESETS = {
     # 名称: (计划条目, 默认局数, 默认轮次上限, 秘密生成方式)
     "greedy_vs_adaptive": ([
         {"key": k} for k in DEFAULT_PLAN_KEYS
-    ] + [{"key": "fixed_cycle"}], 200, 40, "distinct"),
+    ], 200, 40, "distinct"),
     "two_phase_vs_hybrid": ([
         {"key": "two_phase", "params": {"count_policy": "auto_exact"}},
         {"key": "two_phase", "params": {"count_policy": "auto_exact", "lock_known_positions": False}},

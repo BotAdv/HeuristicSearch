@@ -44,8 +44,6 @@ python experiments/benchmark.py --secret-mode repeated --games 200   # 旧规则
 
 | key | 说明 | 平均步数¹ |
 | --- | --- | --- |
-| `random` | 随机基线（不使用反馈） | 未解出 |
-| `fixed_cycle` | 固定循环（不使用反馈） | 未解出 |
 | `naive_position` | 朴素位置独立贪心 | 6.775 |
 | `two_phase` | 两阶段：先定支持集再定顺序 | **6.125** |
 | `position_entropy` | 逐位置信息增益贪心（`split` 探测 + 全局剪枝） | 6.260 |
@@ -75,7 +73,7 @@ REST 接口、策略库页、实验台、命令行实验会自动识别。
 
 ```
 core/          纯规则层（组合空间、反馈判定、单局状态机、Doc 日志）
-strategies/    策略层（接口 + 共享信念工具 + 7 个策略）
+strategies/    策略层（接口 + 共享信念工具 + 解释框架 + 5 个策略）
 engine/        实验层（配对模拟、指标与检验、后台任务）
 web/           路由与 REST API
 templates/     页面（Jinja2）

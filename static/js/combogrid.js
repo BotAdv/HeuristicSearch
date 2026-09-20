@@ -72,12 +72,13 @@ function overlayMarks(marks, guess, answers, label) {
 }
 
 /** 生成一个格子的提示文案 */
-function cellTooltip(a, b, combo, removed, mark, picked) {
+function cellTooltip(a, b, combo, removed, mark, picked, locked) {
   const lines = [];
   lines.push(removed
     ? `(${combo[0]}, ${combo[1]}) 已被规则删除，不属于候选集合 S`
     : `(${combo[0]}, ${combo[1]})`);
   if (a !== b) lines.push(`对称格 ${b}-${a} 与它等价，两格状态始终一致`);
+  if (locked) lines.push('🔒 已锁定：该组合已经在某个位置判定 CORRECT，不会再作为待选');
   if (picked) lines.push('本轮猜测用到了它');
   if (mark && mark.notes && mark.notes.length) {
     const notes = mark.notes.map(n =>
@@ -103,6 +104,7 @@ function cellTooltip(a, b, combo, removed, mark, picked) {
  *   removed   Set<"a-b"> 被规则删除的组合键
  *   marks     accumulateMarks() 的结果
  *   picked    Set<"a-b"> 本轮猜测用到的组合（描边高亮）
+ *   locked    Set<"a-b"> 已锁定（该组合已在某个位置判定 CORRECT）
  *   onPick    (combo) => void
  */
 function renderComboMatrix(host, opts) {
@@ -111,6 +113,7 @@ function renderComboMatrix(host, opts) {
   const removed = opts.removed || new Set();
   const marks = opts.marks || {};
   const picked = opts.picked || new Set();
+  const locked = opts.locked || new Set();
   const onPick = opts.onPick;
 
   const table = document.createElement('table');
@@ -144,18 +147,20 @@ function renderComboMatrix(host, opts) {
       const gone = removed.has(key);
       const mark = marks[key];
       const isPicked = picked.has(key);
+      const isLocked = locked.has(key);
 
       const td = document.createElement('td');
       td.className = 'cg-cell' + (a === b ? ' cg-diag' : '');
       if (gone) td.classList.add('cg-removed');
       if (isPicked) td.classList.add('cg-picked');
+      if (isLocked) td.classList.add('cg-locked');
       if (mark && MARK_RANK[mark.kind]) td.classList.add('mark-' + FEEDBACK_CLASS[mark.kind]);
 
       const btn = document.createElement('button');
       btn.type = 'button';
       btn.className = 'cg-btn';
-      btn.textContent = cellLabel(a, b);
-      btn.title = cellTooltip(a, b, combo, gone, mark, isPicked);
+      btn.textContent = cellLabel(a, b) + (isLocked ? ' 🔒' : '');
+      btn.title = cellTooltip(a, b, combo, gone, mark, isPicked, isLocked);
       if (gone) {
         btn.disabled = true;
         btn.setAttribute('aria-disabled', 'true');

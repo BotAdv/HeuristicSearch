@@ -24,6 +24,7 @@
 | 12 | [12_候选矩阵与状态着色.md](12_候选矩阵与状态着色.md) | 沙盒/逐步猜测共用的 **10×10 候选矩阵**：等价格语义、反馈配色、交互规则 | 看界面或改造前端时 |
 | 13 | [13_多策略并排与策略接管.md](13_多策略并排与策略接管.md) | **多策略对比模式**（同一秘密并排跑）与**把历史交给策略预测下一步** | 想对比策略 / 想接手手动对局 |
 | 14 | [14_决策解释与逐步理由.md](14_决策解释与逐步理由.md) | **决策解释框架**：每个策略说自己“为什么这么选”，逐步猜测页逐轮可看 | 想了解策略逻辑 / 新增策略时 |
+| 15 | [15_子页签与位置锁定.md](15_子页签与位置锁定.md) | 沙盒的**三个子页签**、卡片相互独立、**CORRECT 位置锁定**、移除两个不使用反馈的策略 | 用沙盒 / 改界面时 |
 | — | [CHANGELOG.md](CHANGELOG.md) | 变更记录 | 看改动历史 |
 | — | `_data/events.jsonl` | 机器可读事件流（对局/模拟/交互） | 二次分析 |
 
@@ -36,7 +37,7 @@ python app.py                     # http://127.0.0.1:5000
 ```
 
 ```powershell
-python -m unittest discover -s tests            # 98 个单元测试
+python -m unittest discover -s tests            # 100 个单元测试
 python experiments/benchmark.py --games 200     # 命令行基准实验（规则内）
 python experiments/benchmark.py --all-presets   # 跑完全部预置实验
 python experiments/analyze_game.py <gameId>     # 复盘某局：回放校验 + 每轮选择依据

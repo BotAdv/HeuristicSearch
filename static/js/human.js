@@ -106,13 +106,22 @@
       updateSubmitState();
       return;
     }
+    // 已判定 CORRECT 的位置：锁定（预填 C，但仍可修改——人工录入的是事实，不是选择）
+    const locked = lockedPositions();
+    locked.forEach((info, pos) => {
+      if (!state.answers[pos - 1]) {
+        state.answers[pos - 1] = (comboKey(guess[pos - 1]) === comboKey(info.combo)) ? 'C' : null;
+      }
+    });
     guess.forEach((combo, i) => {
+      const info = locked.get(i + 1);
       const cell = document.createElement('div');
-      cell.className = 'fgcell';
+      cell.className = 'fgcell' + (info ? ' locked' : '');
       const head = document.createElement('div');
       head.className = 'fghead';
-      head.innerHTML = `<span class="fgpos">第 ${i + 1} 位</span><span class="fgcombo">${comboLabel(combo)}</span>`;
-      cell.appendChild(head);
+      head.innerHTML = `<span class="fgpos">第 ${i + 1} 位${info ? '<span class="lockicon" title="该位已判定 CORRECT">🔒</span>' : ''}</span>` +
+        `<span class="fgcombo">${comboLabel(combo)}</span>`;      cell.appendChild(head);
+      if (info) cell.title = `第 ${info.round} 轮已判定 CORRECT（${comboLabel(info.combo)}）`;
       const row = document.createElement('div');
       row.className = 'fbrow';
       LETTERS.forEach(letter => {
@@ -135,6 +144,21 @@
     updateSubmitState();
   }
 
+  /** 历史上已判定 CORRECT 的位置 → {位置: {combo, round}} */
+  function lockedPositions() {
+    const map = new Map();
+    const source = state.viewing || state.game;
+    const history = state.viewing
+      ? (state.viewing.trace || []).map(t => ({ index: t.index, guess: t.guess, feedback: t.feedback }))
+      : ((source && source.history) || []);
+    history.forEach(r => {
+      (r.feedback || []).forEach((kind, i) => {
+        if (kind === 'CORRECT') map.set(i + 1, { combo: r.guess[i], round: r.index });
+      });
+    });
+    return map;
+  }
+
   function renderMatrix() {
     if (!state.meta) return;
     const source = state.viewing || state.game;
@@ -152,6 +176,7 @@
       removed: removedKeySet(state.meta.removedCombos),
       marks,
       picked: new Set(pending.filter(Boolean).map(comboKey)),
+      locked: new Set([...lockedPositions().values()].map(v => comboKey(v.combo))),
     });
     const badge = $('matrixBadge');
     if (badge) badge.textContent = `${state.meta.candidateCount} 候选`;
@@ -220,6 +245,8 @@
     parts.push(`已用 ${g.rounds} 轮`);
     parts.push(g.status === 'awaiting_feedback' ? '等待录入反馈'
       : g.status === 'awaiting_guess' ? '等待策略出招' : '已全部 CORRECT');
+    const lockedN = lockedPositions().size;
+    if (lockedN) parts.push(`已锁定 ${lockedN} 位 🔒`);
     if (g.saved) parts.push(`✅ 已落盘`);
     setStatus($('status'), parts.join(' · '), g.solved ? 'ok' : '');
     const support = g.support || {};

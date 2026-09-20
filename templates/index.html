@@ -1,115 +1,110 @@
 {% extends "base.html" %}
 {% block content %}
-<div class="toolbar">
-  <div class="group">
-    <label for="mode">模式</label>
-    <select id="mode">
-      <option value="manual">手动试玩</option>
-      <option value="strategy">策略自动</option>
-      <option value="multi">多策略对比</option>
-    </select>
-  </div>
-  <div class="group" id="strategyGroup" hidden>
-    <label for="strategy">策略</label>
-    <div class="row">
-      <select id="strategy"></select>
-      <span id="strategyParams" class="params-inline"></span>
-    </div>
-  </div>
-  <div class="group" id="adviseGroup" hidden>
-    <label for="adviseStrategy">把当前历史交给策略</label>
-    <div class="row">
-      <select id="adviseStrategy"></select>
-      <span id="adviseParams" class="params-inline"></span>
-      <button id="btnAdvise" disabled>让策略预测下一步</button>
-    </div>
-  </div>
-  <div class="group">
-    <label for="seed">秘密种子</label>
-    <input id="seed" type="number" placeholder="留空随机" min="0">
-  </div>
-  <div class="group">
-    <label for="maxRounds">轮次上限</label>
-    <input id="maxRounds" type="number" value="40" min="1" max="2000" style="width:80px">
-  </div>
-  <div class="group checkbox">
-    <label><input type="checkbox" id="reveal"> 显示秘密</label>
-  </div>
-  <button id="btnNew" class="primary">开新局</button>
-  <button id="btnStep" disabled>提交猜测</button>
-  <button id="btnPlay" disabled>自动跑完</button>
-  <button id="btnClear" disabled>清空槽位</button>
-</div>
+{# 三个模式各自一个子页签：每个页签都有**自己的控制栏与卡片**，控制按钮永远和内容同屏 #}
+<nav class="subtabs" id="subtabs" role="tablist">
+  <button type="button" class="subtab active" data-tab="manual" role="tab">
+    ① 手动试玩<span class="sub-note">自己选组合，可交给策略接管</span>
+  </button>
+  <button type="button" class="subtab" data-tab="strategy" role="tab">
+    ② 策略自动<span class="sub-note">单个策略逐步 / 跑完</span>
+  </button>
+  <button type="button" class="subtab" data-tab="multi" role="tab">
+    ③ 多策略对比<span class="sub-note">同一秘密并排跑多个策略</span>
+  </button>
+</nav>
 
-<div id="status" class="status">点击「开新局」开始。</div>
-
-<!-- 多策略对比：参与策略清单 -->
-<section id="planPanel" class="panel" hidden style="margin:0 20px 14px">
-  <header>
-    <h2>参与对比的策略 <span class="badge" id="planCount">0</span></h2>
-    <p class="hint">所有策略面对<b>同一条秘密序列</b>（同一局），因此步数差异只来自策略本身；
-      每走一步会同时推进所有策略，也可以单独让某个策略走一步。</p>
-  </header>
-  <div id="planList" class="plan-list"></div>
-  <div class="row">
-    <select id="planAddKey"></select>
-    <button id="btnPlanAdd">+ 添加策略</button>
+<!-- ============================ ① 手动试玩 ============================ -->
+<section class="tabpane" data-pane="manual">
+  <div class="toolbar">
+    <div class="group">
+      <label for="manual-seed">秘密种子</label>
+      <input id="manual-seed" type="number" placeholder="留空随机" min="0">
+    </div>
+    <div class="group">
+      <label for="manual-maxRounds">轮次上限</label>
+      <input id="manual-maxRounds" type="number" value="40" min="1" max="2000" style="width:80px">
+    </div>
+    <div class="group checkbox">
+      <label><input type="checkbox" id="manual-reveal"> 显示秘密</label>
+    </div>
+    <div class="group">
+      <label for="manual-adviseStrategy">把当前历史交给策略</label>
+      <div class="row">
+        <select id="manual-adviseStrategy"></select>
+        <span id="manual-adviseParams" class="params-inline"></span>
+        <button id="manual-btnAdvise">让策略预测下一步</button>
+      </div>
+    </div>
+    <button id="manual-btnNew" class="primary">开新局</button>
+    <button id="manual-btnStep">提交猜测</button>
+    <button id="manual-btnClear">清空未锁定槽位</button>
   </div>
+  <div id="manual-status" class="status">点「开新局」开始：从候选矩阵里点组合填满 10 个槽位，然后提交。</div>
+  <main class="sandbox" data-role="cards"></main>
 </section>
 
-<main class="sandbox" id="sandboxMain">
-  <section class="panel">
-    <header>
-      <h2>候选组合矩阵 <span class="badge" id="paletteCount">45</span></h2>
-      <p class="hint">行 = 前一位 a，列 = 后一位 b；<b>a-b 与 b-a 是同一个组合</b>，
-        任点一格即选中规范形式 (min,max)，例如点「6-3」选的是 (3,6)。
-        虚线划掉的 20 格 = 被规则删除的 10 个组合。</p>
-      <div class="legend">
-        <span><i class="dot c"></i>CORRECT 已就位</span>
-        <span><i class="dot m"></i>MISPLACED 属于秘密</span>
-        <span><i class="dot p"></i>PARTIAL 不属于秘密</span>
-        <span><i class="dot w"></i>WRONG 不属于秘密</span>
+<!-- ============================ ② 策略自动 ============================ -->
+<section class="tabpane" data-pane="strategy" hidden>
+  <div class="toolbar">
+    <div class="group">
+      <label for="strategy-key">策略</label>
+      <div class="row">
+        <select id="strategy-key"></select>
+        <span id="strategy-params" class="params-inline"></span>
       </div>
-      <p class="hint">颜色只是逐轮反馈的备忘，<b>不影响点选</b>；蓝框格是本轮猜测用到的组合。</p>
-    </header>
-    <div id="palette" class="palette-wrap"><div id="comboMatrix"></div></div>
-  </section>
-
-  <section class="panel">
-    <header>
-      <h2>猜测序列 <span class="badge" id="slotCount">0/10</span></h2>
-      <p class="hint">点击槽位可清空该位置；槽位颜色 = 该位的反馈。</p>
-    </header>
-    <div id="slots" class="slots"></div>
-    <div class="legend">
-      <span><i class="dot c"></i>CORRECT</span>
-      <span><i class="dot m"></i>MISPLACED</span>
-      <span><i class="dot p"></i>PARTIAL</span>
-      <span><i class="dot w"></i>WRONG</span>
     </div>
-    <div id="secretBox" class="secret" hidden></div>
-  </section>
+    <div class="group">
+      <label for="strategy-seed">秘密种子</label>
+      <input id="strategy-seed" type="number" placeholder="留空随机" min="0">
+    </div>
+    <div class="group">
+      <label for="strategy-maxRounds">轮次上限</label>
+      <input id="strategy-maxRounds" type="number" value="40" min="1" max="2000" style="width:80px">
+    </div>
+    <div class="group checkbox">
+      <label><input type="checkbox" id="strategy-reveal"> 显示秘密</label>
+    </div>
+    <button id="strategy-btnNew" class="primary">开新局</button>
+    <button id="strategy-btnStep">走一步</button>
+    <button id="strategy-btnPlay">自动跑完</button>
+  </div>
+  <div id="strategy-status" class="status">点「开新局」开始：策略每走一步都会给出该步的逐位理由。</div>
+  <main class="sandbox" data-role="cards"></main>
+</section>
 
-  <section class="panel">
+<!-- ============================ ③ 多策略对比 ============================ -->
+<section class="tabpane" data-pane="multi" hidden>
+  <div class="toolbar">
+    <div class="group">
+      <label for="multi-seed">秘密种子</label>
+      <input id="multi-seed" type="number" placeholder="留空随机" min="0">
+    </div>
+    <div class="group">
+      <label for="multi-maxRounds">轮次上限</label>
+      <input id="multi-maxRounds" type="number" value="40" min="1" max="2000" style="width:80px">
+    </div>
+    <div class="group checkbox">
+      <label><input type="checkbox" id="multi-reveal"> 显示秘密</label>
+    </div>
+    <button id="multi-btnNew" class="primary">开新局</button>
+    <button id="multi-btnStep">所有策略各走一步</button>
+    <button id="multi-btnPlay">自动跑完</button>
+  </div>
+  <section class="panel inline-panel">
     <header>
-      <h2>对局历史 <span class="badge" id="roundBadge">0 轮</span></h2>
-      <p class="hint">每行展示一轮的猜测与逐位反馈。手动模式下把历史交给策略，
-        就能看到该策略基于同样的历史会怎么走。</p>
+      <h2>参与对比的策略 <span class="badge" id="multi-planCount">0</span></h2>
+      <p class="hint">所有策略面对<b>同一条秘密序列</b>（同一局），因此步数差异只来自策略本身；
+        每张卡片都有自己的猜测序列、候选矩阵、历史与理由，互不干扰。</p>
     </header>
-    <div id="history" class="history"></div>
+    <div id="multi-planList" class="plan-list"></div>
+    <div class="row">
+      <select id="multi-planAddKey"></select>
+      <button id="multi-btnPlanAdd">+ 添加策略</button>
+    </div>
   </section>
-
-  <section class="panel" id="explainPanel" hidden>
-    <header>
-      <h2>决策解释：这一步为什么这么选</h2>
-      <p class="hint" id="explainSource">—</p>
-    </header>
-    <div id="explainBox" class="dec-box"></div>
-  </section>
-</main>
-
-<!-- 多策略对比：每个策略一块面板 -->
-<main class="multi-grid" id="multiGrid" hidden></main>
+  <div id="multi-status" class="status">配置好策略后点「开新局」：所有策略会拿到同一条秘密。</div>
+  <main class="multi-grid" data-role="cards"></main>
+</section>
 {% endblock %}
 
 {% block scripts %}

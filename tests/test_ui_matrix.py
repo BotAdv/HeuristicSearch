@@ -76,10 +76,46 @@ class TestMatrixWiring(unittest.TestCase):
     """脚本加载顺序与挂载点。"""
 
     def test_pages_have_matrix_host(self):
-        for name in ("index.html", "human.html"):
-            text = read(TEMPLATES / name)
-            self.assertIn('id="comboMatrix"', text, f"{name} 缺少矩阵挂载点")
-            self.assertIn("palette-wrap", text, f"{name} 缺少横向滚动容器")
+        # 逐步猜测页：矩阵容器写在模板里
+        human = read(TEMPLATES / "human.html")
+        self.assertIn('id="comboMatrix"', human, "human.html 缺少矩阵挂载点")
+        self.assertIn("palette-wrap", human, "human.html 缺少横向滚动容器")
+        # 沙盒页：三个子页签各有自己的卡片容器，卡片（含矩阵）由 JS 生成
+        index = read(TEMPLATES / "index.html")
+        for pane in ("manual", "strategy", "multi"):
+            self.assertIn(f'data-pane="{pane}"', index, f"index.html 缺少 {pane} 页签")
+        self.assertEqual(index.count('data-role="cards"'), 3,
+                         "三个子页签应各有自己的卡片容器（相互独立）")
+        self.assertIn('id="subtabs"', index)
+        sandbox = read(STATIC / "js" / "sandbox.js")
+        for role in ("matrix", "slots", "history", "explainBox"):
+            self.assertIn(f'data-role="{role}"', sandbox,
+                          f"单策略卡片模板缺少 {role}")
+
+    def test_lock_ui_is_wired(self):
+        """需求：某位置判定 CORRECT 后要锁定，不可再改选其它组合。"""
+        sandbox = read(STATIC / "js" / "sandbox.js")
+        self.assertIn("lockedMap()", sandbox)
+        self.assertIn("locked: lockedCombos", sandbox)
+        human = read(STATIC / "js" / "human.js")
+        self.assertIn("lockedPositions()", human)
+        grid = read(STATIC / "js" / "combogrid.js")
+        self.assertIn("opts.locked", grid)
+        css = read(STATIC / "css" / "app.css")
+        for cls in (".slot.locked", ".cg-cell.cg-locked", ".fgcell.locked", ".subtabs"):
+            self.assertIn(cls, css, f"缺少 {cls} 样式")
+
+    def test_feedbackless_strategies_removed(self):
+        """不使用反馈的两个策略（random / fixed_cycle）已按需求移除。"""
+        from strategies import REGISTRY
+
+        self.assertNotIn("random", REGISTRY)
+        self.assertNotIn("fixed_cycle", REGISTRY)
+        self.assertEqual(len(REGISTRY), 5)
+        for key in REGISTRY:
+            self.assertTrue((STATIC.parent / "strategies" / f"{key}.py").exists(), key)
+        self.assertFalse((STATIC.parent / "strategies" / "random_strategy.py").exists())
+        self.assertFalse((STATIC.parent / "strategies" / "fixed_cycle.py").exists())
 
     def test_base_loads_combogrid_before_page_scripts(self):
         base = read(TEMPLATES / "base.html")

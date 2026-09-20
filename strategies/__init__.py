@@ -15,17 +15,16 @@ from typing import Any, Dict, List, Optional, Type
 
 from strategies.adaptive_hybrid import AdaptiveHybridStrategy
 from strategies.base import History, ParamSpec, Strategy
-from strategies.fixed_cycle import FixedCycleStrategy
 from strategies.naive_position import NaivePositionStrategy
 from strategies.particle_entropy import ParticleEntropyStrategy
 from strategies.position_entropy import PositionEntropyStrategy
-from strategies.random_strategy import RandomStrategy
 from strategies.two_phase import TwoPhaseStrategy
 
-#: 注册顺序即前端展示顺序
+#: 注册顺序即前端展示顺序。
+#: 注：曾经有两个“不使用反馈”的极端基线（``random`` / ``fixed_cycle``），
+#: 它们在本游戏里不可能解出，而且会在同一位置反复填同一个错误组合，
+#: 对“策略对比”没有信息量，已按需求移除。
 CLASSES: List[Type[Strategy]] = [
-    RandomStrategy,
-    FixedCycleStrategy,
     NaivePositionStrategy,
     TwoPhaseStrategy,
     PositionEntropyStrategy,
@@ -35,7 +34,7 @@ CLASSES: List[Type[Strategy]] = [
 
 REGISTRY: Dict[str, Type[Strategy]] = {cls.key: cls for cls in CLASSES}
 
-#: 建议的默认对比组合（去掉纯随机/纯固定这两个极端基线）
+#: 建议的默认对比组合
 DEFAULT_PLAN_KEYS: List[str] = [
     "naive_position",
     "two_phase",
